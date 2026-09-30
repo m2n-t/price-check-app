@@ -1,7 +1,6 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime
 
 # إعدادات صفحة التطبيق (توسيع العرض لتغطية الشاشة بالكامل)
 st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="wide")
@@ -33,25 +32,17 @@ def translate_role_to_arabic(role):
         'admin': 'مدير النظام',
         'General Manager': 'مدير النظام',
         'Exhibition Manager': 'مسؤول المعرض',
+        'Branch Manager': 'مدير الفرع',
         'Department Supervisor': 'مشرف قسم',
         'Department Employee': 'موظف قسم',
         'مدير النظام': 'مدير النظام',
         'مسؤول المعرض': 'مسؤول المعرض',
         'مدير المعرض': 'مسؤول المعرض',
+        'مدير الفرع': 'مدير الفرع',
         'مشرف قسم': 'مشرف قسم',
         'موظف قسم': 'موظف قسم'
     }
     return mapping.get(role, role)
-
-# --- دالة لتحديد نوع الجهاز من خلال الـ User-Agent ---
-def get_device_type(user_agent_str):
-    ua = user_agent_str.lower()
-    if 'mobi' in ua or 'android' in ua or 'iphone' in ua:
-        return "📱 جوال (Mobile)"
-    elif 'ipad' in ua or 'tablet' in ua:
-        return "タブح Tablet"
-    else:
-        return "💻 كمبيوتر (PC)"
 
 # --- 1. إعداد قاعدة البيانات المحلية (SQLite) ---
 def init_db():
@@ -96,16 +87,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
-            login_time TEXT,
-            device_info TEXT DEFAULT 'غير معروف'
+            role TEXT
         )
     ''')
-    
-    # تحديث جدول السجلات إذا لم يكن عمود نوع الجهاز موجوداً
-    cursor.execute("PRAGMA table_info(login_logs)")
-    log_cols = [col[1] for col in cursor.fetchall()]
-    if 'device_info' not in log_cols:
-        cursor.execute("ALTER TABLE login_logs ADD COLUMN device_info TEXT DEFAULT 'غير معروف'")
     
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
@@ -153,16 +137,9 @@ if not st.session_state.logged_in:
                     st.session_state.username = user_data[0]
                     st.session_state.role = user_data[2]
                     
-                    # التقاط التوقيت المحلي بدقة بالثانية
-                    current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-                    
-                    # التقاط نوع الجهاز عبر ترويسة المتصفح
-                    headers = st.context.headers if hasattr(st, "context") and hasattr(st.context, "headers") else {}
-                    ua_string = headers.get("User-Agent", "متصفح قياسي")
-                    device_type = get_device_type(ua_string)
-                    
-                    cursor.execute("INSERT INTO login_logs (username, login_time, device_info) VALUES (?, ?, ?)", 
-                                   (user_data[0], current_time, device_type))
+                    # تسجيل الدخول باختصار (اسم المستخدم والمسمى الوظيفي فقط)
+                    cursor.execute("INSERT INTO login_logs (username, role) VALUES (?, ?)", 
+                                   (user_data[0], user_data[2]))
                     conn.commit()
                     conn.close()
                     
@@ -217,7 +194,9 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
+admin_roles = ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'مدير الفرع', 'admin', 'General Manager', 'Exhibition Manager', 'Branch Manager']
+
+if user_role in admin_roles:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
     if selected_lang == "العربية":
@@ -232,7 +211,7 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
+    if user_role in admin_roles:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form", clear_on_submit=True):
@@ -246,6 +225,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 [
                     "General Manager",
                     "Exhibition Manager", 
+                    "Branch Manager",
                     "Department Supervisor", 
                     "Department Employee"
                 ],
@@ -329,6 +309,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                         'مدير النظام': 'General Manager',
                         'مسؤول المعرض': 'Exhibition Manager',
                         'مدير المعرض': 'Exhibition Manager',
+                        'مدير الفرع': 'Branch Manager',
                         'مشرف قسم': 'Department Supervisor',
                         'موظف قسم': 'Department Employee'
                     }
@@ -351,20 +332,20 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
     else:
         st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
-# --- 2. سجلات دخول المستخدمين ---
+# --- 2. سجلات دخول المستخدمين (اسم الشخص والمسمى الوظيفي فقط) ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
-        st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
+    if user_role in admin_roles:
+        st.subheader("📊 قائمة الأشخاص الذين قاموا بتسجيل الدخول ومسمياتهم الوظيفية")
         
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, login_time, device_info FROM login_logs ORDER BY id DESC")
+        cursor.execute("SELECT id, username, role FROM login_logs ORDER BY id DESC")
         logs = cursor.fetchall()
         conn.close()
         
         if logs:
-            for index, (log_id, u_name, l_time, d_info) in enumerate(logs, start=1):
-                col_num, col_row1, col_row2, col_row3 = st.columns([1, 3, 3, 3])
+            for index, (log_id, u_name, r_val) in enumerate(logs, start=1):
+                col_num, col_row1, col_row2 = st.columns([1, 4, 4])
                 with col_num:
                     if st.button(f"⊖ {index}", key=f"del_log_{log_id}"):
                         conn = get_connection()
@@ -374,16 +355,14 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
                         st.success("تم حذف السجل بنجاح!")
                         st.rerun()
                 with col_row1:
-                    st.markdown(f"**المستخدم:** {u_name}")
+                    st.markdown(f"**اسم المستخدم:** {u_name}")
                 with col_row2:
-                    st.markdown(f"**الوقت:** {l_time}")
-                with col_row3:
-                    st.markdown(f"**الجهاز:** {d_info}")
+                    st.markdown(f"**المسمى الوظيفي:** {translate_role_to_arabic(r_val)}")
                 st.markdown("---")
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
     else:
-        st.error("⚠ عذراً، هذه الصفحة مخصصة لمدير النظام ومسؤول المعرض فقط.")
+        st.error("⚠ عذراً، هذه الصفحة مخصصة للمدراء فقط.")
 
 # --- 3. فحص السعر ---
 elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
@@ -425,7 +404,7 @@ elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
 
 # --- 4. إدارة المنتجات والأسعار ---
 elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in admin_roles + ['مشرف قسم', 'Department Supervisor']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -456,7 +435,7 @@ elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in admin_roles + ['مشرف قسم', 'Department Supervisor']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
