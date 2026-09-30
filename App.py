@@ -43,6 +43,16 @@ def translate_role_to_arabic(role):
     }
     return mapping.get(role, role)
 
+# --- دالة لتحديد نوع الجهاز من خلال الـ User-Agent ---
+def get_device_type(user_agent_str):
+    ua = user_agent_str.lower()
+    if 'mobi' in ua or 'android' in ua or 'iphone' in ua:
+        return "📱 جوال (Mobile)"
+    elif 'ipad' in ua or 'tablet' in ua:
+        return "タブح Tablet"
+    else:
+        return "💻 كمبيوتر (PC)"
+
 # --- 1. إعداد قاعدة البيانات المحلية (SQLite) ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
@@ -86,15 +96,21 @@ def init_db():
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
-            login_time TEXT
+            login_time TEXT,
+            device_info TEXT DEFAULT 'غير معروف'
         )
     ''')
+    
+    # تحديث جدول السجلات إذا لم يكن عمود نوع الجهاز موجوداً
+    cursor.execute("PRAGMA table_info(login_logs)")
+    log_cols = [col[1] for col in cursor.fetchall()]
+    if 'device_info' not in log_cols:
+        cursor.execute("ALTER TABLE login_logs ADD COLUMN device_info TEXT DEFAULT 'غير معروف'")
     
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
         cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('admin', '12345', 'General Manager', 'المدير العام', 'الفرع الرئيسي')")
         
-    # ضبط حساب md ليكون مسؤول المعرض ب صلاحيات كاملة وضمان تحديثه إذا كان موجوداً مسبقاً
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
         cursor.execute("INSERT INTO users (username, password, role, emp_name, branch_name) VALUES ('Md', '0904', 'Exhibition Manager', 'مسؤول المعرض', 'الفرع الرئيسي')")
@@ -137,8 +153,16 @@ if not st.session_state.logged_in:
                     st.session_state.username = user_data[0]
                     st.session_state.role = user_data[2]
                     
+                    # التقاط التوقيت المحلي بدقة بالثانية
                     current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-                    cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (user_data[0], current_time))
+                    
+                    # التقاط نوع الجهاز عبر ترويسة المتصفح
+                    headers = st.context.headers if hasattr(st, "context") and hasattr(st.context, "headers") else {}
+                    ua_string = headers.get("User-Agent", "متصفح قياسي")
+                    device_type = get_device_type(ua_string)
+                    
+                    cursor.execute("INSERT INTO login_logs (username, login_time, device_info) VALUES (?, ?, ?)", 
+                                   (user_data[0], current_time, device_type))
                     conn.commit()
                     conn.close()
                     
@@ -193,7 +217,6 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-# منح الصلاحيات الكاملة لكل من مدير النظام ومسؤول المعرض
 if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
@@ -212,7 +235,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
     if user_role in ['مدير النظام', 'مسؤول المعرض', 'مدير المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
-        with st.form("user_form"):
+        with st.form("user_form", clear_on_submit=True):
             new_u = st.text_input("اسم المستخدم الجديد")
             new_emp = st.text_input("اسم الموظف / الفرع الفرعي (اختياري)")
             new_branch = st.text_input("اسم الفرع الرئيسي")
@@ -270,11 +293,8 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 })
             
             df_users = pd.DataFrame(table_data)
-            
-            # ترتيب الأعمدة بالتسلسل المطلوب (من اليمين لليسار)
             df_users = df_users[["اسم الفرع", "الصلاحية", "كلمة المرور", "اسم الموظف", "اسم المستخدم", "العدد", "حذف"]]
             
-            # السماح بالتعديل الكامل لكل الخصائص باستثناء عمود العدد
             edited_df = st.data_editor(
                 df_users,
                 disabled=["العدد"],
@@ -338,13 +358,13 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, login_time FROM login_logs ORDER BY id DESC")
+        cursor.execute("SELECT id, username, login_time, device_info FROM login_logs ORDER BY id DESC")
         logs = cursor.fetchall()
         conn.close()
         
         if logs:
-            for index, (log_id, u_name, l_time) in enumerate(logs, start=1):
-                col_num, col_row1, col_row2 = st.columns([1, 4, 4])
+            for index, (log_id, u_name, l_time, d_info) in enumerate(logs, start=1):
+                col_num, col_row1, col_row2, col_row3 = st.columns([1, 3, 3, 3])
                 with col_num:
                     if st.button(f"⊖ {index}", key=f"del_log_{log_id}"):
                         conn = get_connection()
@@ -354,9 +374,11 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
                         st.success("تم حذف السجل بنجاح!")
                         st.rerun()
                 with col_row1:
-                    st.markdown(f"**{u_name}**")
+                    st.markdown(f"**المستخدم:** {u_name}")
                 with col_row2:
-                    st.markdown(f"**{l_time}**")
+                    st.markdown(f"**الوقت:** {l_time}")
+                with col_row3:
+                    st.markdown(f"**الجهاز:** {d_info}")
                 st.markdown("---")
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
