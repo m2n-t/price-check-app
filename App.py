@@ -246,33 +246,55 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         st.write("### المستخدمون المسجلون في النظام:")
         
         conn = get_connection()
-        users_df = pd.read_sql_query("""
-            SELECT username AS 'اسم المستخدم', 
-                   emp_name AS 'اسم الموظف', 
-                   branch_name AS 'اسم الفرع', 
-                   password AS 'كلمة المرور', 
-                   role AS 'الصلاحية' 
-            FROM users
-        """, conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT username, emp_name, branch_name, password, role FROM users")
+        all_users = cursor.fetchall()
         conn.close()
         
-        users_df['الصلاحية'] = users_df['الصلاحية'].apply(translate_role_to_arabic)
-        st.dataframe(users_df, use_container_width=True)
+        if all_users:
+            st.info("💡 بجانب الأرقام تجد علامة الناقص (-) للحذف الفوري:")
+            for index, (u_name, e_name, b_name, pwd, role_val) in enumerate(all_users):
+                col_num, col_u, col_e, col_b, col_r, col_del = st.columns([1, 2, 2, 2, 2, 1])
+                with col_num:
+                    if st.button(f"➖ {index}", key=f"del_user_btn_{u_name}"):
+                        if u_name.lower() in ["admin", "md"]:
+                            st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
+                        elif u_name.lower() == st.session_state.username.lower():
+                            st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
+                        else:
+                            conn = get_connection()
+                            conn.cursor().execute("DELETE FROM users WHERE username = ?", (u_name,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"تم حذف المستخدم ({u_name}) بنجاح!")
+                            st.rerun()
+                with col_u:
+                    st.markdown(f"**المستخدم:** {u_name}")
+                with col_e:
+                    st.markdown(f"**الموظف:** {e_name}")
+                with col_b:
+                    st.markdown(f"**الفرع:** {b_name}")
+                with col_r:
+                    st.markdown(f"**الصلاحية:** {translate_role_to_arabic(role_val)}")
+                st.markdown("---")
+        else:
+            st.info("لا يوجد مستخدمون مسجلون حالياً.")
         
-        # قسم التعديل المرن (اختر اسم المستخدم وعدل الحقل المطلوب)
-        st.markdown("#### ✏️ تعديل بيانات موظف / فرع مسجل:")
+        # قسم التعديل المرن (اضغط على المربع المطلوب تعديله فقط)
+        st.markdown("#### ✏️ تعديل بيانات موظف / فرع مستجل:")
         with st.form("edit_user_data_form"):
-            edit_username = st.selectbox("اختر اسم المستخدم للتعديل", users_df['اسم المستخدم'].tolist())
+            usernames_list = [u[0] for u in all_users]
+            edit_username = st.selectbox("اختر اسم المستخدم للتعديل", usernames_list if usernames_list else [""])
             
             conn = get_connection()
             cur_data = conn.cursor().execute("SELECT emp_name, branch_name FROM users WHERE username = ?", (edit_username,)).fetchone()
             conn.close()
             
-            up_emp = st.text_input("تعديل اسم الموظف", value=cur_data[0] if cur_data else "")
-            up_branch = st.text_input("تعديل اسم الفرع", value=cur_data[1] if cur_data else "")
+            up_emp = st.text_input("تعديل اسم الموظف (اضغط هنا لتعديله فقط)", value=cur_data[0] if cur_data else "")
+            up_branch = st.text_input("تعديل اسم الفرع (اضغط هنا لتعديله فقط)", value=cur_data[1] if cur_data else "")
             
-            update_data_btn = st.form_submit_button("حفظ التعديلات المحددة")
-            if update_data_btn:
+            update_data_btn = st.form_submit_button("حفظ التعديلات")
+            if update_data_btn and edit_username:
                 conn = get_connection()
                 conn.cursor().execute("UPDATE users SET emp_name = ?, branch_name = ? WHERE username = ?", (up_emp.strip(), up_branch.strip(), edit_username))
                 conn.commit()
@@ -280,25 +302,6 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 st.success(f"تم تحديث بيانات المستخدم ({edit_username}) بنجاح!")
                 st.rerun()
 
-        st.markdown("---")
-        st.markdown("#### 🗑️ حذف مستخدم مسجل:")
-        with st.form("delete_user_form"):
-            user_to_delete = st.selectbox("اختر اسم المستخدم للحذف", users_df['اسم المستخدم'].tolist(), key="del_user_sel")
-            delete_btn = st.form_submit_button("حذف المستخدم المحدد")
-            
-            if delete_btn:
-                if user_to_delete.lower() in ["admin", "md"]:
-                    st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
-                elif user_to_delete.lower() == st.session_state.username.lower():
-                    st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
-                else:
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"تم حذف المستخدم ({user_to_delete}) بنجاح!")
-                    st.rerun()
     else:
         st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
@@ -314,24 +317,22 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         conn.close()
         
         if logs:
-            st.info("💡 اضغط على زر الحذف بجانب كل سجل لإزالته فوراً:")
+            st.info("💡 اضغط على علامة الناقص (-) بجانب الرقم لحذف السجل فوراً:")
             
             for index, (log_id, u_name, l_time) in enumerate(logs):
-                col_num, col_row1, col_row2, col_row3 = st.columns([1, 3, 3, 1])
+                col_num, col_row1, col_row2 = st.columns([1, 4, 4])
                 with col_num:
-                    st.markdown(f"**{index}**")
-                with col_row1:
-                    st.markdown(f"**المستخدم:** {u_name}")
-                with col_row2:
-                    st.markdown(f"**وقت الدخول:** {l_time}")
-                with col_row3:
-                    if st.button(f"➖ حذف", key=f"del_log_{log_id}"):
+                    if st.button(f"➖ {index}", key=f"del_log_{log_id}"):
                         conn = get_connection()
                         conn.cursor().execute("DELETE FROM login_logs WHERE id = ?", (log_id,))
                         conn.commit()
                         conn.close()
                         st.success("تم حذف السجل بنجاح!")
                         st.rerun()
+                with col_row1:
+                    st.markdown(f"**المستخدم:** {u_name}")
+                with col_row2:
+                    st.markdown(f"**وقت الدخول:** {l_time}")
                 st.markdown("---")
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
