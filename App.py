@@ -31,13 +31,12 @@ st.markdown("""
 def translate_role_to_arabic(role):
     mapping = {
         'admin': 'مدير النظام',
-        'General Manager': 'مدير الفرع',
-        'Exhibition Manager': 'مسؤول الفرع',
+        'General Manager': 'مدير النظام',
+        'Exhibition Manager': 'مدير المعرض',
         'Department Supervisor': 'مشرف قسم',
         'Department Employee': 'موظف قسم',
         'مدير النظام': 'مدير النظام',
-        'مدير الفرع': 'مدير الفرع',
-        'مسؤول الفرع': 'مسؤول الفرع',
+        'مدير المعرض': 'مدير المعرض',
         'مشرف قسم': 'مشرف قسم',
         'موظف قسم': 'موظف قسم'
     }
@@ -96,7 +95,7 @@ def init_db():
         
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('Md', '0904', 'Exhibition Manager', 'مسؤول الفرع', 'الفرع الرئيسي')")
+        cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('Md', '0904', 'Exhibition Manager', 'مسؤول المعرض', 'الفرع الرئيسي')")
         
     conn.commit()
     conn.close()
@@ -190,7 +189,7 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
+if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
     if selected_lang == "العربية":
@@ -205,7 +204,7 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
@@ -267,12 +266,13 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             
             df_users = pd.DataFrame(table_data)
             
-            # ترتيب الأعمدة الجديد بالتسلسل المطلوب (من اليمين لليسار)
+            # ترتيب الأعمدة بالتسلسل المطلوب (من اليمين لليسار)
             df_users = df_users[["اسم الفرع", "الصلاحية", "كلمة المرور", "اسم الموظف", "اسم المستخدم", "العدد", "حذف"]]
             
+            # السماح بالتعديل الكامل على كافة خصائص الجدول ما عدا العدد وحذف
             edited_df = st.data_editor(
                 df_users,
-                disabled=["اسم الفرع", "الصلاحية", "كلمة المرور", "اسم الموظف", "اسم المستخدم", "العدد"],
+                disabled=["العدد"],
                 hide_index=True,
                 use_container_width=True,
                 key="unified_users_grid"
@@ -302,7 +302,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 else:
                     reverse_mapping = {
                         'مدير النظام': 'General Manager',
-                        'مدير الفرع': 'General Manager',
+                        'مدير المعرض': 'Exhibition Manager',
                         'مسؤول الفرع': 'Exhibition Manager',
                         'مشرف قسم': 'Department Supervisor',
                         'موظف قسم': 'Department Employee'
@@ -328,7 +328,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
 
 # --- 2. سجلات دخول المستخدمين ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
-    if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
         
         conn = get_connection()
@@ -356,7 +356,7 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
     else:
-        st.error("⚠ عذراً، هذه الصفحة مخصصة لمدير النظام، مدير الفرع، ومسؤول الفرع فقط.")
+        st.error("⚠ عذراً، هذه الصفحة مخصصة لمدير النظام ومدير المعرض فقط.")
 
 # --- 3. فحص السعر ---
 elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
@@ -398,7 +398,7 @@ elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
 
 # --- 4. إدارة المنتجات والأسعار ---
 elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
-    if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول الفرع', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -429,7 +429,7 @@ elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
-    if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول الفرع', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
