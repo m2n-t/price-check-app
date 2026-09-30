@@ -266,7 +266,9 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             
             df_users = pd.DataFrame(table_data)
             
-            # جدول قابل للتعديل الفوري التلقائي (حذف والعدد واسم المستخدم غير قابلين للتعديل)
+            # ترتيب الأعمدة تماماً كما طلبت: حذف | العدد | اسم المستخدم | كلمة المرور | الصلاحية | اسم الفرع
+            df_users = df_users[["حذف", "العدد", "اسم المستخدم", "كلمة المرور", "الصلاحية", "اسم الفرع"]]
+            
             edited_df = st.data_editor(
                 df_users,
                 disabled=["حذف", "العدد", "اسم المستخدم"],
@@ -274,7 +276,6 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 key="unified_users_grid"
             )
             
-            # حفظ التعديلات فورياً وتتبع عمليات الحذف عبر زر الدائرة (⊖)
             conn = get_connection()
             cursor = conn.cursor()
             needs_rerun = False
