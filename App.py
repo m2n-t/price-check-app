@@ -3,7 +3,7 @@ import sqlite3
 import pandas as pd
 
 # إعدادات صفحة التطبيق
-st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷️️", layout="centered")
+st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="centered")
 
 # --- 1. إعداد قاعدة البيانات المحلية (SQLite) لضمان حفظ البيانات ودائم ---
 def init_db():
@@ -127,7 +127,7 @@ with tab1:
             col2.metric("السعر", f"{product[1]} ر.س")
             st.info(f"القسم: {product[2]}")
         else:
-            st.warning("⚠️️ هذا الصنف غير مسجل في النظام.")
+            st.warning("⚠ هذا الصنف غير مسجل في النظام.")
 
 # --- التبويب الثاني: إدارة المنتجات (للمشرفين فقط) ---
 if tab2:
@@ -176,7 +176,7 @@ if tab3:
                         cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u, new_p, new_role))
                         conn.commit()
                         conn.close()
-                        st.success(f"تم إنشاء حساب المستخدم ({new_u}) بنجاح!"
+                        st.success(f"تم إنشاء حساب المستخدم {new_u} بنجاح!")
                     except sqlite3.IntegrityError:
                         st.error("اسم المستخدم موجود مسبقاً، اختر اسماً آخر.")
                 else:
@@ -199,4 +199,3 @@ with tab4:
         st.dataframe(prod_df, use_container_width=True)
     else:
         st.info("لا توجد أصناف مسجلة حتى الآن.")
-      
