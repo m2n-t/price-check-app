@@ -26,6 +26,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- دالة مساعدة لترجمة الصلاحيات إلى العربية للجميع ---
+def translate_role_to_arabic(role):
+    mapping = {
+        'admin': 'مدير النظام',
+        'Exhibition Manager': 'مسؤول المعرض',
+        'Department Supervisor': 'مشرف قسم',
+        'Department Employee': 'موظف قسم',
+        'مدير النظام': 'مدير النظام',
+        'مسؤول المعرض': 'مسؤول المعرض',
+        'مشرف قسم': 'مشرف قسم',
+        'موظف قسم': 'موظف قسم'
+    }
+    return mapping.get(role, role)
+
 # --- 1. إعداد قاعدة البيانات المحلية (SQLite) مع الحفاظ التام على البيانات ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
@@ -71,12 +85,12 @@ def init_db():
     # حساب المدير الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
-        cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin', '12345', 'مدير النظام')")
+        cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin', '12345', 'Exhibition Manager')")
         
     # حساب مسؤول المعرض
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT OR IGNORE INTO users VALUES ('Md', '0904', 'مسؤول المعرض')")
+        cursor.execute("INSERT OR IGNORE INTO users VALUES ('Md', '0904', 'Exhibition Manager')")
         
     conn.commit()
     conn.close()
@@ -127,15 +141,17 @@ if not st.session_state.logged_in:
                     st.error("خطأ في اسم المستخدم أو كلمة المرور.")
     st.stop()
 
-# --- 3. خيار اختيار لغة الواجهة للمستخدم الحالي في الشريط الجانبي ---
-st.sidebar.markdown("### 🌐 إعدادات لغة الواجهة")
-selected_lang = st.sidebar.selectbox("اختر لغة الواجهة", ["العربية", "English"])
+# --- 3. اختيار اللغة بدون كتابة نص إضافي في الشريط الجانبي ---
+selected_lang = st.sidebar.selectbox("", ["العربية", "English"], label_visibility="collapsed")
 
 # --- واجهة التطبيق الرئيسية بعد الدخول ---
+user_role = st.session_state.role
+arabic_role_display = translate_role_to_arabic(user_role)
+
 if selected_lang == "العربية":
     st.title("🏷️ نظام فحص وتدقيق الأسعار المعتمد")
     st.sidebar.markdown(f"**👤 المستخدم الحالي:** {st.session_state.username}")
-    st.sidebar.markdown(f"**📌 الصلاحية:** {st.session_state.role}")
+    st.sidebar.markdown(f"**📌 الصلاحية:** {arabic_role_display}")
     
     logout_label = "تسجيل الخروج"
     menu_title = "📋 القائمة الرئيسية"
@@ -150,7 +166,7 @@ if selected_lang == "العربية":
 else:
     st.title("🏷️ Price Check & Audit System")
     st.sidebar.markdown(f"**👤 Current User:** {st.session_state.username}")
-    st.sidebar.markdown(f"**📌 Role:** {st.session_state.role}")
+    st.sidebar.markdown(f"**📌 Role:** {arabic_role_display}")
     
     logout_label = "Logout"
     menu_title = "📋 Main Menu"
@@ -171,12 +187,10 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-user_role = st.session_state.role
-
-# تصفية القوائم بناءً على الصلاحيات العربية للمستخدم
-if user_role in ['مدير النظام', 'مسؤول المعرض']:
+# تصفية القوائم بناءً على الدور الوظيفي الأصلي
+if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
-elif user_role == 'مشرف قسم':
+elif user_role in ['مشرف قسم', 'Department Supervisor']:
     if selected_lang == "العربية":
         menu_selection = st.sidebar.radio(menu_title, ["🔍 فحص السعر", "➕ إدارة المنتجات والأسعار", "📁 اسعار المنتجات (رفع إكسل)", "📋 كل المنتجات"])
     else:
@@ -189,7 +203,7 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
@@ -198,11 +212,11 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             new_role = st.selectbox(
                 "الصلاحية (الدور الوظيفي)", 
                 [
-                    "مدير النظام", 
-                    "مسؤول المعرض", 
-                    "مشرف قسم", 
-                    "موظف قسم"
-                ]
+                    "Exhibition Manager", 
+                    "Department Supervisor", 
+                    "Department Employee"
+                ],
+                format_func=lambda x: translate_role_to_arabic(x)
             )
             
             create_user_btn = st.form_submit_button("إنشاء الحساب")
@@ -227,6 +241,9 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         conn = get_connection()
         users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الصلاحية (الدور)' FROM users", conn)
         conn.close()
+        
+        # ترجمة الصلاحيات في الجدول المعروض إلى العربية
+        users_df['الصلاحية (الدور)'] = users_df['الصلاحية (الدور)'].apply(translate_role_to_arabic)
         
         st.dataframe(users_df, use_container_width=True)
         
@@ -253,7 +270,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
 
 # --- 2. سجلات دخول المستخدمين ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
         st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
         
         conn = get_connection()
@@ -307,7 +324,7 @@ elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
 
 # --- 4. إدارة المنتجات والأسعار ---
 elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -338,7 +355,7 @@ elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
