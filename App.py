@@ -61,14 +61,14 @@ def init_db():
     ''')
     
     # إنشاء حساب المدير الأساسي (admin / 12345)
-    cursor.execute("SELECT * FROM users WHERE username = 'admin'")
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'admin')")
+        cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'مدير النظام')")
         
-    # إنشاء حساب مسؤول المعرض الجديد (Md / 0904)
-    cursor.execute("SELECT * FROM users WHERE username = 'Md'")
+    # إنشاء حساب مسؤول المعرض (Md / 0904)
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('Md', '0904', 'Exhibition Manager')")
+        cursor.execute("INSERT INTO users VALUES ('Md', '0904', 'مسؤول المعرض')")
         
     conn.commit()
     conn.close()
@@ -86,29 +86,30 @@ if "logged_in" not in st.session_state:
 
 # شاشة تسجيل الدخول
 if not st.session_state.logged_in:
-    st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول - تشيك الأسعار</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول - نظام فحص الأسعار</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>النظام محمي ومخصص للاستخدام التجاري.</p>", unsafe_allow_html=True)
     
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
         with st.form("login_form"):
-            u_input = st.text_input("اسم المستخدم")
+            u_input = st.text_input("اسم المستخدم (لا يشترط التقيد بحالة الحروف الكبيرة/الصغيرة)")
             p_input = st.text_input("كلمة المرور", type="password")
             submit_login = st.form_submit_button("دخول النظام")
             
             if submit_login:
                 conn = get_connection()
                 cursor = conn.cursor()
-                cursor.execute("SELECT password, role FROM users WHERE username = ?", (u_input,))
+                # البحث بغض النظر عن حالة الحروف الكبيرة والصغيرة (Lower)
+                cursor.execute("SELECT username, password, role FROM users WHERE LOWER(username) = LOWER(?)", (u_input.strip(),))
                 user_data = cursor.fetchone()
                 
-                if user_data and user_data[0] == p_input:
+                if user_data and user_data[1] == p_input:
                     st.session_state.logged_in = True
-                    st.session_state.username = u_input
-                    st.session_state.role = user_data[1]  # الدور المخزن
+                    st.session_state.username = user_data[0] # حفظ الاسم بالشكل الأصلي
+                    st.session_state.role = user_data[2]     # الدور بالعربي
                     
                     current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-                    cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (u_input, current_time))
+                    cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (user_data[0], current_time))
                     conn.commit()
                     conn.close()
                     
@@ -119,14 +120,43 @@ if not st.session_state.logged_in:
                     st.error("خطأ في اسم المستخدم أو كلمة المرور.")
     st.stop()
 
-# --- 3. واجهة التطبيق الرئيسية بعد الدخول ---
-st.title("🏷️ نظام تشيك الأسعار المعتمد")
+# --- 3. خيار اختيار لغة الواجهة في الشريط الجانبي ---
+st.sidebar.markdown("### 🌐 إعدادات اللغة / Language")
+selected_lang = st.sidebar.selectbox("اختر لغة الواجهة / Select Language", ["العربية", "English"])
 
-# عرض اسم المستخدم والدور الوظيفي في الشريط الجانبي
-st.sidebar.markdown(f"**👤 المستخدم الحالي:** {st.session_state.username}")
-st.sidebar.markdown(f"**📌 الدور الوظيفي:** {st.session_state.role}")
+# --- واجهة التطبيق الرئيسية بعد الدخول ---
+if selected_lang == "العربية":
+    st.title("🏷️ نظام فحص وتدقيق الأسعار المعتمد")
+    st.sidebar.markdown(f"**👤 المستخدم الحالي:** {st.session_state.username}")
+    st.sidebar.markdown(f"**📌 الصلاحية:** {st.session_state.role}")
+    
+    logout_label = "تسجيل الخروج"
+    menu_title = "📋 القائمة الرئيسية"
+    menu_options = [
+        "👥 إدارة المستخدمين", 
+        "📊 سجلات دخول المستخدمين",
+        "🔍 فحص السعر", 
+        "➕ إدارة المنتجات والأسعار", 
+        "📁 اسعار المنتجات (رفع إكسل)", 
+        "📋 كل المنتجات"
+    ]
+else:
+    st.title("🏷️ Price Check & Audit System")
+    st.sidebar.markdown(f"**👤 Current User:** {st.session_state.username}")
+    st.sidebar.markdown(f"**📌 Role:** {st.session_state.role}")
+    
+    logout_label = "Logout"
+    menu_title = "📋 Main Menu"
+    menu_options = [
+        "👥 User Management", 
+        "📊 Login Logs",
+        "🔍 Price Checker", 
+        "➕ Product Management", 
+        "📁 Import Prices (Excel)", 
+        "📋 All Products"
+    ]
 
-if st.sidebar.button("تسجيل الخروج"):
+if st.sidebar.button(logout_label):
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
@@ -134,55 +164,37 @@ if st.sidebar.button("تسجيل الخروج"):
 
 st.sidebar.markdown("---")
 
-# تحديد القوائم بناءً على الأدوار بدقة
 user_role = st.session_state.role
 
-if user_role in ['admin', 'Exhibition Manager']:
-    menu_selection = st.sidebar.radio(
-        "📋 القائمة الرئيسية",
-        [
-            "👥 إدارة المستخدمين", 
-            "📊 سجلات دخول المستخدمين",
-            "🔍 فحص السعر", 
-            "➕ إدارة المنتجات والأسعار", 
-            "📁 اسعار المنتجات (رفع إكسل)", 
-            "📋 كل المنتجات"
-        ]
-    )
-elif user_role == 'Department Supervisor':
-    menu_selection = st.sidebar.radio(
-        "📋 القائمة الرئيسية",
-        [
-            "🔍 فحص السعر", 
-            "➕ إدارة المنتجات والأسعار", 
-            "📁 اسعار المنتجات (رفع إكسل)", 
-            "📋 كل المنتجات"
-        ]
-    )
-else:  # Department employee
-    menu_selection = st.sidebar.radio(
-        "📋 القائمة الرئيسية",
-        [
-            "🔍 فحص السعر", 
-            "📋 كل المنتجات"
-        ]
-    )
+# تصفية القوائم بناءً على الدور الوظيفي بالعربي
+if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+    menu_selection = st.sidebar.radio(menu_title, menu_options)
+elif user_role in ['مشرف قسم', 'Department Supervisor']:
+    if selected_lang == "العربية":
+        menu_selection = st.sidebar.radio(menu_title, ["🔍 فحص السعر", "➕ إدارة المنتجات والأسعار", "📁 اسعار المنتجات (رفع إكسل)", "📋 كل المنتجات"])
+    else:
+        menu_selection = st.sidebar.radio(menu_title, ["🔍 Price Checker", "➕ Product Management", "📁 Import Prices (Excel)", "📋 All Products"])
+else:  
+    if selected_lang == "العربية":
+        menu_selection = st.sidebar.radio(menu_title, ["🔍 فحص السعر", "📋 كل المنتجات"])
+    else:
+        menu_selection = st.sidebar.radio(menu_title, ["🔍 Price Checker", "📋 All Products"])
 
-# --- 1. إدارة المستخدمين (للمدير ومسؤول المعرض فقط) ---
-if menu_selection == "👥 إدارة المستخدمين":
-    if user_role in ['admin', 'Exhibition Manager']:
-        st.subheader("إدارة المستخدمين الجدد والنظام")
+# --- 1. إدارة المستخدمين ---
+if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+        st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
-            new_u = st.text_input("اسم المستخدم الجديد")
+            new_u = st.text_input("اسم المستخدم الجديد (يقبل حروف كبيرة أو صغيرة)")
             new_p = st.text_input("كلمة المرور للمستخدم الجديد", type="password")
             new_role = st.selectbox(
-                "صلاحية المستخدم (الدور الوظيفي)", 
+                "الصلاحية (الدور الوظيفي)", 
                 [
-                    "admin", 
-                    "Exhibition Manager", 
-                    "Department Supervisor", 
-                    "Department employee"
+                    "مدير النظام", 
+                    "مسؤول المعرض", 
+                    "مشرف قسم", 
+                    "موظف قسم"
                 ]
             )
             
@@ -193,20 +205,20 @@ if menu_selection == "👥 إدارة المستخدمين":
                     try:
                         conn = get_connection()
                         cursor = conn.cursor()
-                        cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u, new_p, new_role))
+                        cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u.strip(), new_p, new_role))
                         conn.commit()
                         conn.close()
-                        st.success(f"تم إنشاء حساب المستخدم {new_u} بنجاح!")
+                        st.success(f"تم إنشاء حساب المستخدم ({new_u}) بنجاح!")
                     except sqlite3.IntegrityError:
                         st.error("اسم المستخدم موجود مسبقاً، اختر اسماً آخر.")
                 else:
-                    st.error("أدخل اسم المستخدم وكلمة المرور.")
+                    st.error("الرجاء أدخال اسم المستخدم وكلمة المرور.")
                     
         st.markdown("---")
         st.write("### المستخدمون المسجلون في النظام:")
         
         conn = get_connection()
-        users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الدور الوظيفي' FROM users", conn)
+        users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الصلاحية (الدور)' FROM users", conn)
         conn.close()
         
         st.dataframe(users_df, use_container_width=True)
@@ -217,9 +229,9 @@ if menu_selection == "👥 إدارة المستخدمين":
             delete_btn = st.form_submit_button("حذف المستخدم المحدد")
             
             if delete_btn:
-                if user_to_delete in ["admin", "Md"]:
+                if user_to_delete.lower() in ["admin", "md"]:
                     st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
-                elif user_to_delete == st.session_state.username:
+                elif user_to_delete.lower() == st.session_state.username.lower():
                     st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
                 else:
                     conn = get_connection()
@@ -233,8 +245,8 @@ if menu_selection == "👥 إدارة المستخدمين":
         st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
 # --- 2. سجلات دخول المستخدمين ---
-elif menu_selection == "📊 سجلات دخول المستخدمين":
-    if user_role in ['admin', 'Exhibition Manager']:
+elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
         st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
         
         conn = get_connection()
@@ -248,11 +260,11 @@ elif menu_selection == "📊 سجلات دخول المستخدمين":
     else:
         st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
-# --- 3. فحص السعر (مع إظهار سعر العرض) ---
-elif menu_selection == "🔍 فحص السعر":
+# --- 3. فحص السعر ---
+elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
     st.subheader("التحقق الفوري من أسعار المنتجات")
     
-    search_method = st.radio("اختر طريقة البحث:", ["إدخال رقم الباركود يدوياً", "استخدام الكاميرا (QR / Barcode)"])
+    search_method = st.radio("اختر طريقة البحث:", ["إدخال رقم الباركود يدوياً", "استخدام الكاميرا (Barcode)"])
     
     barcode_to_search = ""
     if search_method == "إدخال رقم الباركود يدوياً":
@@ -267,7 +279,7 @@ elif menu_selection == "🔍 فحص السعر":
     if barcode_to_search:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT name, price, offer_price, category FROM products WHERE barcode = ?", (barcode_to_search,))
+        cursor.execute("SELECT name, price, offer_price, category FROM products WHERE barcode = ?", (barcode_to_search.strip(),))
         product = cursor.fetchone()
         conn.close()
         
@@ -277,7 +289,6 @@ elif menu_selection == "🔍 فحص السعر":
             col1.metric("اسم الصنف", product[0])
             col2.metric("السعر الأساسي", f"{product[1]} ر.س")
             
-            # عرض سعر العرض إذا كان موجوداً وأكبر من الصفر
             if product[2] and product[2] > 0:
                 col3.metric("🔥 سعر العرض", f"{product[2]} ر.س", delta="عرض خاص", delta_color="inverse")
             else:
@@ -287,9 +298,9 @@ elif menu_selection == "🔍 فحص السعر":
         else:
             st.warning("⚠ هذا الصنف غير مسجل في النظام.")
 
-# --- 4. إدارة المنتجات والأسعار (مع خانة سعر العرض) ---
-elif menu_selection == "➕ إدارة المنتجات والأسعار":
-    if user_role in ['admin', 'Exhibition Manager', 'Department Supervisor']:
+# --- 4. إدارة المنتجات والأسعار ---
+elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -309,7 +320,7 @@ elif menu_selection == "➕ إدارة المنتجات والأسعار":
                         VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(barcode) 
                         DO UPDATE SET name=excluded.name, price=excluded.price, offer_price=excluded.offer_price, category=excluded.category
-                    ''', (p_code, p_name, p_price, p_offer, p_cat))
+                    ''', (p_code.strip(), p_name, p_price, p_offer, p_cat))
                     conn.commit()
                     conn.close()
                     st.success(f"تم حفظ الصنف ({p_name}) وتحديث سعره بنجاح!")
@@ -319,8 +330,8 @@ elif menu_selection == "➕ إدارة المنتجات والأسعار":
         st.error("⚠ عذراً، لا تملك صلاحية تعديل أو إضافة المنتجات.")
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
-elif menu_selection == "📁 اسعار المنتجات (رفع إكسل)":
-    if user_role in ['admin', 'Exhibition Manager', 'Department Supervisor']:
+elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
@@ -361,7 +372,7 @@ elif menu_selection == "📁 اسعار المنتجات (رفع إكسل)":
                                 VALUES (?, ?, ?, ?, ?)
                                 ON CONFLICT(barcode) 
                                 DO UPDATE SET name=excluded.name, price=excluded.price, offer_price=excluded.offer_price, category=excluded.category
-                            ''', (b_code, p_name, p_price, p_offer, p_cat))
+                            ''', (b_code.strip(), p_name, p_price, p_offer, p_cat))
                             success_count += 1
                             
                     conn.commit()
@@ -373,7 +384,7 @@ elif menu_selection == "📁 اسعار المنتجات (رفع إكسل)":
         st.error("⚠ عذراً، لا تملك صلاحية رفع الملفات.")
 
 # --- 6. كل المنتجات ---
-elif menu_selection == "📋 كل المنتجات":
+elif menu_selection in ["📋 كل المنتجات", "📋 All Products"]:
     st.subheader("قائمة أصناف و أسعار المنتجات المسجلة")
     conn = get_connection()
     prod_df = pd.read_sql_query("SELECT barcode AS 'الباركود', name AS 'اسم الصنف', price AS 'السعر الأساسي (ر.س)', offer_price AS 'سعر العرض (ر.س)', category AS 'القسم' FROM products", conn)
@@ -382,3 +393,4 @@ elif menu_selection == "📋 كل المنتجات":
         st.dataframe(prod_df, use_container_width=True)
     else:
         st.info("لا توجد أصناف مسجلة حتى الآن.")
+        
