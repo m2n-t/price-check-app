@@ -42,12 +42,11 @@ def translate_role_to_arabic(role):
     }
     return mapping.get(role, role)
 
-# --- 1. إعداد قاعدة البيانات المحلية (SQLite) مع الحفاظ التام على البيانات ---
+# --- 1. إعداد قاعدة البيانات المحلية (SQLite) ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # جدول المستخدمين مع حقول اسم الموظف واسم الفرع
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -65,7 +64,6 @@ def init_db():
     if 'branch_name' not in user_cols:
         cursor.execute("ALTER TABLE users ADD COLUMN branch_name TEXT DEFAULT ''")
     
-    # جدول المنتجات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             barcode TEXT PRIMARY KEY,
@@ -83,7 +81,6 @@ def init_db():
     if 'category' not in prod_cols:
         cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'أخرى'")
 
-    # جدول سجلات الدخول
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,12 +89,10 @@ def init_db():
         )
     ''')
     
-    # حساب المدير الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
         cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('admin', '12345', 'General Manager', 'المدير العام', 'الفرع الرئيسي')")
         
-    # حساب مسؤول الفرع الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
         cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('Md', '0904', 'Exhibition Manager', 'مسؤول الفرع', 'الفرع الرئيسي')")
@@ -116,7 +111,6 @@ if "logged_in" not in st.session_state:
     st.session_state.username = ""
     st.session_state.role = ""
 
-# شاشة تسجيل الدخول
 if not st.session_state.logged_in:
     st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول - نظام فحص الأسعار</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>النظام محمي ومخصص للاستخدام التجاري.</p>", unsafe_allow_html=True)
@@ -124,7 +118,7 @@ if not st.session_state.logged_in:
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
         with st.form("login_form"):
-            u_input = st.text_input("اسم المستخدم (لا يشترط التقيد بحالة الحروف الكبيرة/الصغيرة)")
+            u_input = st.text_input("اسم المستخدم")
             p_input = st.text_input("كلمة المرور", type="password")
             submit_login = st.form_submit_button("دخول النظام")
             
@@ -151,10 +145,8 @@ if not st.session_state.logged_in:
                     st.error("خطأ في اسم المستخدم أو كلمة المرور.")
     st.stop()
 
-# --- 3. اختيار اللغة بدون كتابة نص إضافي في الشريط الجانبي ---
 selected_lang = st.sidebar.selectbox("", ["العربية", "English"], label_visibility="collapsed")
 
-# --- واجهة التطبيق الرئيسية بعد الدخول ---
 user_role = st.session_state.role
 arabic_role_display = translate_role_to_arabic(user_role)
 
@@ -197,7 +189,6 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-# تصفية القوائم بناءً على الدور الوظيفي
 if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
@@ -268,20 +259,19 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         users_df['الصلاحية'] = users_df['الصلاحية'].apply(translate_role_to_arabic)
         st.dataframe(users_df, use_container_width=True)
         
-        # قسم تعديل بيانات المستخدم (اسم الموظف أو الفرع)
+        # قسم التعديل المرن (اضغط على الحقل المطلوب تعديله فقط)
         st.markdown("#### ✏️ تعديل بيانات موظف / فرع مستجل:")
         with st.form("edit_user_data_form"):
             edit_username = st.selectbox("اختر اسم المستخدم للتعديل", users_df['اسم المستخدم'].tolist())
             
-            # جلب البيانات الحالية للمستخدم المحدد
             conn = get_connection()
             cur_data = conn.cursor().execute("SELECT emp_name, branch_name FROM users WHERE username = ?", (edit_username,)).fetchone()
             conn.close()
             
-            up_emp = st.text_input("تحديث اسم الموظف", value=cur_data[0] if cur_data else "")
-            up_branch = st.text_input("تحديث اسم الفرع", value=cur_data[1] if cur_data else "")
+            up_emp = st.text_input("تعديل اسم الموظف (اتركه كما هو أو غير ما تحتاجه)", value=cur_data[0] if cur_data else "")
+            up_branch = st.text_input("تعديل اسم الفرع (اتركه كما هو أو غير ما تحتاجه)", value=cur_data[1] if cur_data else "")
             
-            update_data_btn = st.form_submit_button("حفظ التعديلات")
+            update_data_btn = st.form_submit_button("حفظ التعديلات المحددة")
             if update_data_btn:
                 conn = get_connection()
                 conn.cursor().execute("UPDATE users SET emp_name = ?, branch_name = ? WHERE username = ?", (up_emp.strip(), up_branch.strip(), edit_username))
@@ -324,22 +314,23 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         conn.close()
         
         if logs:
-            st.info("💡 يمكنك حذف أي سجل فوراً بالضغط على علامة الناقص (➖) بجانب السجل أدناه:")
+            st.info("💡 اضغط على زر الناقص (-) بجانب الرقم لحذف السجل فوراً:")
             
-            for log_id, u_name, l_time in logs:
-                col_row1, col_row2, col_row3 = st.columns([3, 3, 1])
+            for index, (log_id, u_name, l_time) in enumerate(logs):
+                col_num, col_row1, col_row2, col_row3 = st.columns([1, 3, 3, 1])
+                with col_num:
+                    st.markdown(f"**{index}**")
                 with col_row1:
                     st.markdown(f"**المستخدم:** {u_name}")
                 with col_row2:
                     st.markdown(f"**وقت الدخول:** {l_time}")
                 with col_row3:
-                    # زر الحذف الفوري مع علامة الناقص
                     if st.button(f"➖ حذف", key=f"del_log_{log_id}"):
                         conn = get_connection()
                         conn.cursor().execute("DELETE FROM login_logs WHERE id = ?", (log_id,))
                         conn.commit()
                         conn.close()
-                        st.success(f"تم حذف السجل بنجاح!")
+                        st.success("تم حذف السجل بنجاح!")
                         st.rerun()
                 st.markdown("---")
         else:
