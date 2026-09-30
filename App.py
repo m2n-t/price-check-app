@@ -6,7 +6,7 @@ from datetime import datetime
 # إعدادات صفحة التطبيق (توسيع العرض لتغطية الشاشة بالكامل)
 st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="wide")
 
-# --- تنسيق CSS لتكبير الخطوط وجعل الواجهة من اليمين لليسار (RTL) ---
+# --- تنسيق CSS لتكبير الخطوط وجعل الواجهة من اليمين لليسار (RTL) مع تصميم الأزرار الدائرية للحذف ---
 st.markdown("""
     <style>
     /* تكبير الخطوط العامة وتوجيه النص لليمين */
@@ -252,11 +252,11 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         conn.close()
         
         if all_users:
-            st.info("💡 بجانب الأرقام تجد علامة الناقص (-) للحذف الفوري:")
             for index, (u_name, e_name, b_name, pwd, role_val) in enumerate(all_users):
-                col_num, col_u, col_e, col_b, col_r, col_del = st.columns([1, 2, 2, 2, 2, 1])
+                col_num, col_u, col_e, col_b, col_r = st.columns([1, 2, 2, 2, 2])
                 with col_num:
-                    if st.button(f"➖ {index}", key=f"del_user_btn_{u_name}"):
+                    # زر حذف صغير داخل دائرة
+                    if st.button(f"⊙ {index}", key=f"del_user_btn_{u_name}", help="حذف المستخدم"):
                         if u_name.lower() in ["admin", "md"]:
                             st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
                         elif u_name.lower() == st.session_state.username.lower():
@@ -269,38 +269,53 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                             st.success(f"تم حذف المستخدم ({u_name}) بنجاح!")
                             st.rerun()
                 with col_u:
-                    st.markdown(f"**المستخدم:** {u_name}")
+                    st.markdown(f"{u_name}")
                 with col_e:
-                    st.markdown(f"**الموظف:** {e_name}")
+                    st.markdown(f"{e_name}")
                 with col_b:
-                    st.markdown(f"**الفرع:** {b_name}")
+                    st.markdown(f"{b_name}")
                 with col_r:
-                    st.markdown(f"**الصلاحية:** {translate_role_to_arabic(role_val)}")
+                    st.markdown(f"{translate_role_to_arabic(role_val)}")
                 st.markdown("---")
         else:
             st.info("لا يوجد مستخدمون مسجلون حالياً.")
         
-        # قسم التعديل المرن (اضغط على المربع المطلوب تعديله فقط)
-        st.markdown("#### ✏️ تعديل بيانات موظف / فرع مستجل:")
-        with st.form("edit_user_data_form"):
-            usernames_list = [u[0] for u in all_users]
-            edit_username = st.selectbox("اختر اسم المستخدم للتعديل", usernames_list if usernames_list else [""])
-            
+        # --- جدول تعديل مباشر (اضغط على الخلية وعدل مباشرة) ---
+        st.markdown("#### ✏️ جدول التعديل المباشر على بيانات الموظفين والفرع:")
+        st.info("💡 اضغط مباشرة داخل أي خلية (اسم الموظف أو اسم الفرع) في الجدول أدناه لتعديلها، ثم اضغط على زر الحفظ بالأسفل:")
+        
+        conn = get_connection()
+        df_users_edit = pd.read_sql_query("""
+            SELECT username AS 'اسم المستخدم', 
+                   emp_name AS 'اسم الموظف', 
+                   branch_name AS 'اسم الفرع', 
+                   role AS 'الصلاحية' 
+            FROM users
+        """, conn)
+        conn.close()
+        
+        df_users_edit['الصلاحية'] = df_users_edit['الصلاحية'].apply(translate_role_to_arabic)
+        
+        # عرض جدول قابل للتعديل المباشر (اسم المستخدم والصلاحية للقراءة فقط، الموظف والفرع قابلين للتعديل)
+        edited_df = st.data_editor(
+            df_users_edit,
+            disabled=["اسم المستخدم", "الصلاحية"],
+            use_container_width=True,
+            key="users_editable_grid"
+        )
+        
+        if st.button("💾 حفظ التعديلات المباشرة في الجدول"):
             conn = get_connection()
-            cur_data = conn.cursor().execute("SELECT emp_name, branch_name FROM users WHERE username = ?", (edit_username,)).fetchone()
+            cursor = conn.cursor()
+            for _, row in edited_df.iterrows():
+                u_n = row['اسم المستخدم']
+                e_n = row['اسم الموظف']
+                b_n = row['اسم الفرع']
+                cursor.execute("UPDATE users SET emp_name = ?, branch_name = ? WHERE username = ?", (e_n, b_n, u_n))
+            conn.commit()
             conn.close()
-            
-            up_emp = st.text_input("تعديل اسم الموظف (اضغط هنا لتعديله فقط)", value=cur_data[0] if cur_data else "")
-            up_branch = st.text_input("تعديل اسم الفرع (اضغط هنا لتعديله فقط)", value=cur_data[1] if cur_data else "")
-            
-            update_data_btn = st.form_submit_button("حفظ التعديلات")
-            if update_data_btn and edit_username:
-                conn = get_connection()
-                conn.cursor().execute("UPDATE users SET emp_name = ?, branch_name = ? WHERE username = ?", (up_emp.strip(), up_branch.strip(), edit_username))
-                conn.commit()
-                conn.close()
-                st.success(f"تم تحديث بيانات المستخدم ({edit_username}) بنجاح!")
-                st.rerun()
+            st.success("تم تحديث وحفظ البيانات بنجاح!")
+            st.rerun()
 
     else:
         st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
@@ -317,12 +332,10 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         conn.close()
         
         if logs:
-            st.info("💡 اضغط على علامة الناقص (-) بجانب الرقم لحذف السجل فوراً:")
-            
             for index, (log_id, u_name, l_time) in enumerate(logs):
                 col_num, col_row1, col_row2 = st.columns([1, 4, 4])
                 with col_num:
-                    if st.button(f"➖ {index}", key=f"del_log_{log_id}"):
+                    if st.button(f"⊙ {index}", key=f"del_log_{log_id}", help="حذف السجل"):
                         conn = get_connection()
                         conn.cursor().execute("DELETE FROM login_logs WHERE id = ?", (log_id,))
                         conn.commit()
@@ -330,9 +343,9 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
                         st.success("تم حذف السجل بنجاح!")
                         st.rerun()
                 with col_row1:
-                    st.markdown(f"**المستخدم:** {u_name}")
+                    st.markdown(f"{u_name}")
                 with col_row2:
-                    st.markdown(f"**وقت الدخول:** {l_time}")
+                    st.markdown(f"{l_time}")
                 st.markdown("---")
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
