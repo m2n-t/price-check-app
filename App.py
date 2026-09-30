@@ -83,8 +83,10 @@ def init_db():
     if 'category' not in prod_cols:
         cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'أخرى'")
 
+    # إعادة إنشاء جدول السجلات ليطابق الأعمدة المطلوبة بدقة (اسم المستخدم والمسمى الوظيفي فقط)
+    cursor.execute("DROP TABLE IF EXISTS login_logs")
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS login_logs (
+        CREATE TABLE login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
             role TEXT
