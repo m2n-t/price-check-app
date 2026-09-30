@@ -1,11 +1,32 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+from datetime import datetime
 
-# إعدادات صفحة التطبيق
-st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="centered")
+# إعدادات صفحة التطبيق (توسيع العرض لتغطية الشاشة بالكامل)
+st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="wide")
 
-# --- 1. إعداد قاعدة البيانات المحلية (SQLite) لضمان حفظ البيانات ودائم ---
+# --- تنسيق CSS لتكبير الخطوط وجعل الواجهة من اليمين لليسار (RTL) ---
+st.markdown("""
+    <style>
+    /* تكبير الخطوط العامة وتوجيه النص لليمين */
+    html, body, [class*="css"] {
+        direction: rtl;
+        text-align: right;
+        font-size: 18px !important;
+    }
+    /* تكبير العناوين */
+    h1 { font-size: 2.5rem !important; font-weight: bold; }
+    h2 { font-size: 2rem !important; }
+    h3 { font-size: 1.5rem !important; }
+    /* تنسيق الحقول والجداول */
+    .stTextInput input, .stSelectbox select, .stNumberInput input {
+        font-size: 18px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 1. إعداد قاعدة البيانات المحلية (SQLite) ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
     cursor = conn.cursor()
@@ -19,27 +40,41 @@ def init_db():
         )
     ''')
     
-    # جدول المنتجات
+    # جدول المنتجات (تم إضافة عمود `offer_price` لسعر العرض)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             barcode TEXT PRIMARY KEY,
             name TEXT,
             price REAL,
+            offer_price REAL,
             category TEXT
         )
     ''')
     
-    # إنشاء حساب المدير الأساسي تلقائياً (admin / 12345)
+    # جدول سجلات الدخول
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS login_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            login_time TEXT
+        )
+    ''')
+    
+    # إنشاء حساب المدير الأساسي (admin / 12345)
     cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
         cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'admin')")
+        
+    # إنشاء حساب مسؤول المعرض (Exhibition Manager / 0904)
+    cursor.execute("SELECT * FROM users WHERE username = 'Exhibition Manager'")
+    if not cursor.fetchone():
+        cursor.execute("INSERT INTO users VALUES ('Exhibition Manager', '0904', 'Exhibition Manager')")
         
     conn.commit()
     conn.close()
 
 init_db()
 
-# دوال مساعدة للتعامل مع قاعدة البيانات
 def get_connection():
     return sqlite3.connect('price_check.db', check_same_thread=False)
 
@@ -54,32 +89,42 @@ if not st.session_state.logged_in:
     st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول - تشيك الأسعار</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center;'>النظام محمي ومخصص للاستخدام التجاري.</p>", unsafe_allow_html=True)
     
-    with st.form("login_form"):
-        u_input = st.text_input("اسم المستخدم")
-        p_input = st.text_input("كلمة المرور", type="password")
-        submit_login = st.form_submit_button("دخول النظام")
-        
-        if submit_login:
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT password, role FROM users WHERE username = ?", (u_input,))
-            user_data = cursor.fetchone()
-            conn.close()
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        with st.form("login_form"):
+            u_input = st.text_input("اسم المستخدم")
+            p_input = st.text_input("كلمة المرور", type="password")
+            submit_login = st.form_submit_button("دخول النظام")
             
-            if user_data and user_data[0] == p_input:
-                st.session_state.logged_in = True
-                st.session_state.username = u_input
-                st.session_state.role = user_data[1]  # 'admin' أو 'user'
-                st.success("تم تسجيل الدخول بنجاح!")
-                st.rerun()
-            else:
-                st.error("خطأ في اسم المستخدم أو كلمة المرور.")
+            if submit_login:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT password, role FROM users WHERE username = ?", (u_input,))
+                user_data = cursor.fetchone()
+                
+                if user_data and user_data[0] == p_input:
+                    st.session_state.logged_in = True
+                    st.session_state.username = u_input
+                    st.session_state.role = user_data[1]  # الدور المخزن
+                    
+                    current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+                    cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (u_input, current_time))
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success("تم تسجيل الدخول بنجاح!")
+                    st.rerun()
+                else:
+                    conn.close()
+                    st.error("خطأ في اسم المستخدم أو كلمة المرور.")
     st.stop()
 
 # --- 3. واجهة التطبيق الرئيسية بعد الدخول ---
 st.title("🏷️ نظام تشيك الأسعار المعتمد")
-st.sidebar.markdown(f"**المستخدم الحالي:** {st.session_state.username}")
-st.sidebar.markdown(f"**الصلاحية:** {'مدير النظام (Admin)' if st.session_state.role == 'admin' else 'مستخدم (فحص فقط)'}")
+
+# عرض اسم المستخدم والدور الوظيفي في الشريط الجانبي
+st.sidebar.markdown(f"**👤 المستخدم الحالي:** {st.session_state.username}")
+st.sidebar.markdown(f"**📌 الدور الوظيفي:** {st.session_state.role}")
 
 if st.sidebar.button("تسجيل الخروج"):
     st.session_state.logged_in = False
@@ -89,19 +134,32 @@ if st.sidebar.button("تسجيل الخروج"):
 
 st.sidebar.markdown("---")
 
-# ترتيب القوائم في الشريط الجانبي (Sidebar) عمودياً وتحت بعض على اليمين
-if st.session_state.role == 'admin':
+# تحديد القوائم بناءً على الأدوار بدقة
+user_role = st.session_state.role
+
+if user_role in ['admin', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(
         "📋 القائمة الرئيسية",
         [
             "👥 إدارة المستخدمين", 
+            "📊 سجلات دخول المستخدمين",
             "🔍 فحص السعر", 
             "➕ إدارة المنتجات والأسعار", 
             "📁 اسعار المنتجات (رفع إكسل)", 
             "📋 كل المنتجات"
         ]
     )
-else:
+elif user_role == 'Department Supervisor':
+    menu_selection = st.sidebar.radio(
+        "📋 القائمة الرئيسية",
+        [
+            "🔍 فحص السعر", 
+            "➕ إدارة المنتجات والأسعار", 
+            "📁 اسعار المنتجات (رفع إكسل)", 
+            "📋 كل المنتجات"
+        ]
+    )
+else:  # Department employee
     menu_selection = st.sidebar.radio(
         "📋 القائمة الرئيسية",
         [
@@ -110,61 +168,87 @@ else:
         ]
     )
 
-# --- 1. إدارة المستخدمين (مع ميزة الحذف) ---
+# --- 1. إدارة المستخدمين (للمدير ومسؤول المعرض فقط) ---
 if menu_selection == "👥 إدارة المستخدمين":
-    st.subheader("إدارة المستخدمين الجدد والنظام")
-    
-    with st.form("user_form"):
-        new_u = st.text_input("اسم المستخدم الجديد")
-        new_p = st.text_input("كلمة المرور للمستخدم الجديد", type="password")
-        new_role = st.selectbox("صلاحية المستخدم", ["user", "admin"])
+    if user_role in ['admin', 'Exhibition Manager']:
+        st.subheader("إدارة المستخدمين الجدد والنظام")
         
-        create_user_btn = st.form_submit_button("إنشاء الحساب")
+        with st.form("user_form"):
+            new_u = st.text_input("اسم المستخدم الجديد")
+            new_p = st.text_input("كلمة المرور للمستخدم الجديد", type="password")
+            new_role = st.selectbox(
+                "صلاحية المستخدم (الدور الوظيفي)", 
+                [
+                    "admin", 
+                    "Exhibition Manager", 
+                    "Department Supervisor", 
+                    "Department employee"
+                ]
+            )
+            
+            create_user_btn = st.form_submit_button("إنشاء الحساب")
+            
+            if create_user_btn:
+                if new_u and new_p:
+                    try:
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u, new_p, new_role))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"تم إنشاء حساب المستخدم {new_u} بنجاح!")
+                    except sqlite3.IntegrityError:
+                        st.error("اسم المستخدم موجود مسبقاً، اختر اسماً آخر.")
+                else:
+                    st.error("أدخل اسم المستخدم وكلمة المرور.")
+                    
+        st.markdown("---")
+        st.write("### المستخدمون المسجلون في النظام:")
         
-        if create_user_btn:
-            if new_u and new_p:
-                try:
+        conn = get_connection()
+        users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الدور الوظيفي' FROM users", conn)
+        conn.close()
+        
+        st.dataframe(users_df, use_container_width=True)
+        
+        st.markdown("#### 🗑️ حذف مستخدم مسجل:")
+        with st.form("delete_user_form"):
+            user_to_delete = st.selectbox("اختر اسم المستخدم للحذف", users_df['اسم المستخدم'].tolist())
+            delete_btn = st.form_submit_button("حذف المستخدم المحدد")
+            
+            if delete_btn:
+                if user_to_delete in ["admin", "Exhibition Manager"]:
+                    st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
+                elif user_to_delete == st.session_state.username:
+                    st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
+                else:
                     conn = get_connection()
                     cursor = conn.cursor()
-                    cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u, new_p, new_role))
+                    cursor.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
                     conn.commit()
                     conn.close()
-                    st.success(f"تم إنشاء حساب المستخدم {new_u} بنجاح!")
-                except sqlite3.IntegrityError:
-                    st.error("اسم المستخدم موجود مسبقاً، اختر اسماً آخر.")
-            else:
-                st.error("أدخل اسم المستخدم وكلمة المرور.")
-                
-    st.markdown("---")
-    st.write("### المستخدمون المسجلون في النظام (وإدارتهم):")
-    
-    conn = get_connection()
-    users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الصلاحية' FROM users", conn)
-    conn.close()
-    
-    st.dataframe(users_df, use_container_width=True)
-    
-    # قسم حذف المستخدمين
-    st.markdown("#### 🗑️ حذف مستخدم مسجل:")
-    with st.form("delete_user_form"):
-        user_to_delete = st.selectbox("اختر اسم المستخدم للحذف", users_df['اسم المستخدم'].tolist())
-        delete_btn = st.form_submit_button("حذف المستخدم المحدد")
-        
-        if delete_btn:
-            if user_to_delete == "admin":
-                st.error("⚠ لا يمكن حذف حساب المسؤول الأساسي (admin).")
-            elif user_to_delete == st.session_state.username:
-                st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
-            else:
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
-                conn.commit()
-                conn.close()
-                st.success(f"تم حذف المستخدم ({user_to_delete}) بنجاح!")
-                st.rerun()
+                    st.success(f"تم حذف المستخدم ({user_to_delete}) بنجاح!")
+                    st.rerun()
+    else:
+        st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
-# --- 2. فحص السعر ---
+# --- 2. سجلات دخول المستخدمين ---
+elif menu_selection == "📊 سجلات دخول المستخدمين":
+    if user_role in ['admin', 'Exhibition Manager']:
+        st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
+        
+        conn = get_connection()
+        logs_df = pd.read_sql_query("SELECT id AS 'م', username AS 'اسم المستخدم', login_time AS 'وقت تسجيل الدخول' FROM login_logs ORDER BY id DESC", conn)
+        conn.close()
+        
+        if not logs_df.empty:
+            st.dataframe(logs_df, use_container_width=True)
+        else:
+            st.info("لا توجد سجلات دخول مسجلة حتى الآن.")
+    else:
+        st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
+
+# --- 3. فحص السعر (مع إظهار سعر العرض) ---
 elif menu_selection == "🔍 فحص السعر":
     st.subheader("التحقق الفوري من أسعار المنتجات")
     
@@ -183,100 +267,116 @@ elif menu_selection == "🔍 فحص السعر":
     if barcode_to_search:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT name, price, category FROM products WHERE barcode = ?", (barcode_to_search,))
+        cursor.execute("SELECT name, price, offer_price, category FROM products WHERE barcode = ?", (barcode_to_search,))
         product = cursor.fetchone()
         conn.close()
         
         if product:
             st.success("تم العثور على المنتج بنجاح!")
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             col1.metric("اسم الصنف", product[0])
-            col2.metric("السعر", f"{product[1]} ر.س")
-            st.info(f"القسم: {product[2]}")
+            col2.metric("السعر الأساسي", f"{product[1]} ر.س")
+            
+            # عرض سعر العرض إذا كان موجوداً وأكبر من الصفر
+            if product[2] and product[2] > 0:
+                col3.metric("🔥 سعر العرض", f"{product[2]} ر.س", delta="عرض خاص", delta_color="inverse")
+            else:
+                col3.metric("🔥 سعر العرض", "لا يوجد عرض")
+                
+            st.info(f"القسم: {product[3]}")
         else:
             st.warning("⚠ هذا الصنف غير مسجل في النظام.")
 
-# --- 3. إدارة المنتجات والأسعار ---
+# --- 4. إدارة المنتجات والأسعار (مع خانة سعر العرض) ---
 elif menu_selection == "➕ إدارة المنتجات والأسعار":
-    st.subheader("إضافة أو تعديل منتج فردي")
-    with st.form("product_form"):
-        p_code = st.text_input("رقم الباركود")
-        p_name = st.text_input("اسم الصنف")
-        p_price = st.number_input("السعر بالريال", min_value=0.0, format="%.2f")
-        p_cat = st.selectbox("القسم", ["أغذية", "مشروبات", "منظفات", "إلكترونيات", "أخرى"])
-        
-        save_product = st.form_submit_button("حفظ أو تحديث المنتج")
-        
-        if save_product:
-            if p_code and p_name and p_price >= 0:
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO products (barcode, name, price, category) 
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(barcode) 
-                    DO UPDATE SET name=excluded.name, price=excluded.price, category=excluded.category
-                ''', (p_code, p_name, p_price, p_cat))
-                conn.commit()
-                conn.close()
-                st.success(f"تم حفظ الصنف ({p_name}) وتحديث سعره بنجاح!")
-            else:
-                st.error("الرجاء تعبئة الحقول الأساسية بشكل صحيح.")
+    if user_role in ['admin', 'Exhibition Manager', 'Department Supervisor']:
+        st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
+        with st.form("product_form"):
+            p_code = st.text_input("رقم الباركود")
+            p_name = st.text_input("اسم الصنف")
+            p_price = st.number_input("السعر الأساسي بالريال", min_value=0.0, format="%.2f")
+            p_offer = st.number_input("سعر العرض (اختياري - اتركه 0 إذا لم يوجد عرض)", min_value=0.0, format="%.2f")
+            p_cat = st.selectbox("القسم", ["أغذية", "مشروبات", "منظفات", "إلكترونيات", "أخرى"])
+            
+            save_product = st.form_submit_button("حفظ أو تحديث المنتج")
+            
+            if save_product:
+                if p_code and p_name and p_price >= 0:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO products (barcode, name, price, offer_price, category) 
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(barcode) 
+                        DO UPDATE SET name=excluded.name, price=excluded.price, offer_price=excluded.offer_price, category=excluded.category
+                    ''', (p_code, p_name, p_price, p_offer, p_cat))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"تم حفظ الصنف ({p_name}) وتحديث سعره بنجاح!")
+                else:
+                    st.error("الرجاء تعبئة الحقول الأساسية بشكل صحيح.")
+    else:
+        st.error("⚠ عذراً، لا تملك صلاحية تعديل أو إضافة المنتجات.")
 
-# --- 4. اسعار المنتجات (رفع إكسل) ---
+# --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection == "📁 اسعار المنتجات (رفع إكسل)":
-    st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
-    st.markdown("""
-    **تعليمات الملف:**
-    يجب أن يحتوي الملف على الأعمدة التالية باللغة الإنجليزية لضمان القراءة الصحيحة:
-    - `barcode` (رقم الباركود)
-    - `name` (اسم المنتج)
-    - `price` (السعر)
-    - `category` (القسم)
-    """)
-    
-    uploaded_file = st.file_uploader("اختر ملف CSV أو Excel", type=["csv", "xlsx"])
-    
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df_upload = pd.read_csv(uploaded_file)
-            else:
-                df_upload = pd.read_excel(uploaded_file)
-            
-            st.write("معاينة البيانات المرفوعة:", df_upload.head())
-            
-            if st.button("اعتماد وحفظ جميع المنتجات في النظام"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                success_count = 0
+    if user_role in ['admin', 'Exhibition Manager', 'Department Supervisor']:
+        st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
+        st.markdown("""
+        **تعليمات الملف:**
+        يجب أن يحتوي الملف على الأعمدة التالية باللغة الإنجليزية لضمان القراءة الصحيحة:
+        - `barcode` (رقم الباركود)
+        - `name` (اسم المنتج)
+        - `price` (السعر الأساسي)
+        - `offer_price` (سعر العرض - اختياري)
+        - `category` (القسم)
+        """)
+        
+        uploaded_file = st.file_uploader("اختر ملف CSV أو Excel", type=["csv", "xlsx"])
+        
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df_upload = pd.read_csv(uploaded_file)
+                else:
+                    df_upload = pd.read_excel(uploaded_file)
                 
-                for _, row in df_upload.iterrows():
-                    b_code = str(row.get('barcode', ''))
-                    p_name = str(row.get('name', ''))
-                    p_price = float(row.get('price', 0.0))
-                    p_cat = str(row.get('category', 'أخرى'))
+                st.write("معاينة البيانات المرفوعة:", df_upload.head())
+                
+                if st.button("اعتماد وحفظ جميع المنتجات في النظام"):
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    success_count = 0
                     
-                    if b_code and p_name:
-                        cursor.execute('''
-                            INSERT INTO products (barcode, name, price, category) 
-                            VALUES (?, ?, ?, ?)
-                            ON CONFLICT(barcode) 
-                            DO UPDATE SET name=excluded.name, price=excluded.price, category=excluded.category
-                        ''', (b_code, p_name, p_price, p_cat))
-                        success_count += 1
+                    for _, row in df_upload.iterrows():
+                        b_code = str(row.get('barcode', ''))
+                        p_name = str(row.get('name', ''))
+                        p_price = float(row.get('price', 0.0))
+                        p_offer = float(row.get('offer_price', 0.0)) if pd.notna(row.get('offer_price')) else 0.0
+                        p_cat = str(row.get('category', 'أخرى'))
                         
-                conn.commit()
-                conn.close()
-                st.success(f"تم بنجاح استيراد وتحديث {success_count} منتجاً في قاعدة البيانات!")
-        except Exception as e:
-            st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
+                        if b_code and p_name:
+                            cursor.execute('''
+                                INSERT INTO products (barcode, name, price, offer_price, category) 
+                                VALUES (?, ?, ?, ?, ?)
+                                ON CONFLICT(barcode) 
+                                DO UPDATE SET name=excluded.name, price=excluded.price, offer_price=excluded.offer_price, category=excluded.category
+                            ''', (b_code, p_name, p_price, p_offer, p_cat))
+                            success_count += 1
+                            
+                    conn.commit()
+                    conn.close()
+                    st.success(f"تم بنجاح استيراد وتحديث {success_count} منتجاً في قاعدة البيانات!")
+            except Exception as e:
+                st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
+    else:
+        st.error("⚠ عذراً، لا تملك صلاحية رفع الملفات.")
 
-# --- 5. كل المنتجات ---
+# --- 6. كل المنتجات ---
 elif menu_selection == "📋 كل المنتجات":
-    st.subheader("قائمة أصناف وسعار المنتجات المسجلة")
+    st.subheader("قائمة أصناف و أسعار المنتجات المسجلة")
     conn = get_connection()
-    prod_df = pd.read_sql_query("SELECT barcode AS 'الباركود', name AS 'اسم الصنف', price AS 'السعر (ر.س)', category AS 'القسم' FROM products", conn)
+    prod_df = pd.read_sql_query("SELECT barcode AS 'الباركود', name AS 'اسم الصنف', price AS 'السعر الأساسي (ر.س)', offer_price AS 'سعر العرض (ر.س)', category AS 'القسم' FROM products", conn)
     conn.close()
     if not prod_df.empty:
         st.dataframe(prod_df, use_container_width=True)
