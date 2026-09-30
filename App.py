@@ -29,10 +29,10 @@ def init_db():
         )
     ''')
     
-    # إنشاء حساب المدير الأساسي تلقائياً إذا لم يكن موجوداً
-    cursor.execute("SELECT * FROM users WHERE username = 'mohammed'")
+    # إنشاء حساب المدير الأساسي تلقائياً (admin / 12345)
+    cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('mohammed', '12345', 'admin')")
+        cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'admin')")
         
     conn.commit()
     conn.close()
@@ -89,7 +89,7 @@ if st.sidebar.button("تسجيل الخروج"):
 
 st.sidebar.markdown("---")
 
-# ترتيب القوائم بالترتيب المطلوب تماماً وتحت بعض على اليمين (Sidebar)
+# ترتيب القوائم في الشريط الجانبي (Sidebar) عمودياً وتحت بعض على اليمين
 if st.session_state.role == 'admin':
     menu_selection = st.sidebar.radio(
         "📋 القائمة الرئيسية",
@@ -110,9 +110,10 @@ else:
         ]
     )
 
-# --- 1. إدارة المستخدمين ---
+# --- 1. إدارة المستخدمين (مع ميزة الحذف) ---
 if menu_selection == "👥 إدارة المستخدمين":
     st.subheader("إدارة المستخدمين الجدد والنظام")
+    
     with st.form("user_form"):
         new_u = st.text_input("اسم المستخدم الجديد")
         new_p = st.text_input("كلمة المرور للمستخدم الجديد", type="password")
@@ -135,11 +136,33 @@ if menu_selection == "👥 إدارة المستخدمين":
                 st.error("أدخل اسم المستخدم وكلمة المرور.")
                 
     st.markdown("---")
-    st.write("### المستخدمون المسجلون في النظام:")
+    st.write("### المستخدمون المسجلون في النظام (وإدارتهم):")
+    
     conn = get_connection()
-    users_df = pd.read_sql_query("SELECT username, role FROM users", conn)
+    users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الصلاحية' FROM users", conn)
     conn.close()
+    
     st.dataframe(users_df, use_container_width=True)
+    
+    # قسم حذف المستخدمين
+    st.markdown("#### 🗑️ حذف مستخدم مسجل:")
+    with st.form("delete_user_form"):
+        user_to_delete = st.selectbox("اختر اسم المستخدم للحذف", users_df['اسم المستخدم'].tolist())
+        delete_btn = st.form_submit_button("حذف المستخدم المحدد")
+        
+        if delete_btn:
+            if user_to_delete == "admin":
+                st.error("⚠ لا يمكن حذف حساب المسؤول الأساسي (admin).")
+            elif user_to_delete == st.session_state.username:
+                st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
+            else:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM users WHERE username = ?", (user_to_delete,))
+                conn.commit()
+                conn.close()
+                st.success(f"تم حذف المستخدم ({user_to_delete}) بنجاح!")
+                st.rerun()
 
 # --- 2. فحص السعر ---
 elif menu_selection == "🔍 فحص السعر":
