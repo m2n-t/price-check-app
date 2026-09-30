@@ -256,22 +256,23 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             table_data = []
             for index, (u_name, pwd, role_val, b_name, e_name) in enumerate(all_users, start=1):
                 table_data.append({
-                    "حذف": "⊖",
-                    "العدد": index,
-                    "اسم المستخدم": u_name,
-                    "كلمة المرور": pwd,
+                    "اسم الفرع": b_name if b_name else e_name,
                     "الصلاحية": translate_role_to_arabic(role_val),
-                    "اسم الفرع": b_name if b_name else e_name
+                    "كلمة المرور": pwd,
+                    "اسم الموظف": e_name,
+                    "اسم المستخدم": u_name,
+                    "العدد": index,
+                    "حذف": "⊖"
                 })
             
             df_users = pd.DataFrame(table_data)
             
-            # ترتيب الأعمدة الدقيق وإلغاء فهرسة الـ pandas لمنع ظهور عمود الفهرس الافتراضي
-            df_users = df_users[["حذف", "العدد", "اسم المستخدم", "كلمة المرور", "الصلاحية", "اسم الفرع"]]
+            # ترتيب الأعمدة الجديد بالتسلسل المطلوب (من اليمين لليسار)
+            df_users = df_users[["اسم الفرع", "الصلاحية", "كلمة المرور", "اسم الموظف", "اسم المستخدم", "العدد", "حذف"]]
             
             edited_df = st.data_editor(
                 df_users,
-                disabled=["حذف", "العدد", "اسم المستخدم"],
+                disabled=["اسم الفرع", "الصلاحية", "كلمة المرور", "اسم الموظف", "اسم المستخدم", "العدد"],
                 hide_index=True,
                 use_container_width=True,
                 key="unified_users_grid"
@@ -286,6 +287,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 p_w = row['كلمة المرور']
                 r_v = row['الصلاحية']
                 b_n = row['اسم الفرع']
+                e_n = row['اسم الموظف']
                 del_action = row['حذف']
                 
                 if del_action != "⊖":
@@ -308,9 +310,9 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                     db_role = reverse_mapping.get(r_v, r_v)
                     cursor.execute("""
                         UPDATE users 
-                        SET password = ?, role = ?, branch_name = ? 
+                        SET password = ?, role = ?, branch_name = ?, emp_name = ? 
                         WHERE username = ?
-                    """, (p_w, db_role, b_n, u_n))
+                    """, (p_w, db_role, b_n, e_n, u_n))
                     conn.commit()
             
             conn.close()
