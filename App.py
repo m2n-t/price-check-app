@@ -26,12 +26,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. إعداد قاعدة البيانات المحلية (SQLite) ---
+# --- 1. إعداد قاعدة البيانات المحلية (SQLite) مع الحفاظ التام على البيانات عند أي تعديل للكود ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # جدول المستخدمين
+    # إنشاء جدول المستخدمين (لا يحذف البيانات القديمة أبداً بسبب IF NOT EXISTS)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -40,7 +40,7 @@ def init_db():
         )
     ''')
     
-    # جدول المنتجات (يتضمن عمود `offer_price` لسعر العرض)
+    # إنشاء جدول المنتجات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             barcode TEXT PRIMARY KEY,
@@ -51,7 +51,15 @@ def init_db():
         )
     ''')
     
-    # جدول سجلات الدخول
+    # التحقق من وجود الأعمدة ديناميكياً بدون حذف البيانات الحالية
+    cursor.execute("PRAGMA table_info(products)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'offer_price' not in columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN offer_price REAL DEFAULT 0.0")
+    if 'category' not in columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'أخرى'")
+
+    # إنشاء جدول سجلات الدخول
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,15 +68,15 @@ def init_db():
         )
     ''')
     
-    # إنشاء حساب المدير الأساسي (admin / 12345)
+    # إضافة حساب المدير الأساسي إذا لم يكن موجوداً فقط
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'مدير النظام')")
+        cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin', '12345', 'مدير النظام')")
         
-    # إنشاء حساب مسؤول المعرض (Md / 0904)
+    # إضافة حساب مسؤول المعرض إذا لم يكن موجوداً فقط
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('Md', '0904', 'مسؤول المعرض')")
+        cursor.execute("INSERT OR IGNORE INTO users VALUES ('Md', '0904', 'مسؤول المعرض')")
         
     conn.commit()
     conn.close()
@@ -99,14 +107,13 @@ if not st.session_state.logged_in:
             if submit_login:
                 conn = get_connection()
                 cursor = conn.cursor()
-                # البحث بغض النظر عن حالة الحروف الكبيرة والصغيرة (Lower)
                 cursor.execute("SELECT username, password, role FROM users WHERE LOWER(username) = LOWER(?)", (u_input.strip(),))
                 user_data = cursor.fetchone()
                 
                 if user_data and user_data[1] == p_input:
                     st.session_state.logged_in = True
-                    st.session_state.username = user_data[0] # حفظ الاسم بالشكل الأصلي
-                    st.session_state.role = user_data[2]     # الدور بالعربي
+                    st.session_state.username = user_data[0]
+                    st.session_state.role = user_data[2]
                     
                     current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
                     cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (user_data[0], current_time))
@@ -166,7 +173,7 @@ st.sidebar.markdown("---")
 
 user_role = st.session_state.role
 
-# تصفية القوائم بناءً على الدور الوظيفي بالعربي
+# تصفية القوائم بناءً على الدور الوظيفي
 if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
@@ -393,4 +400,3 @@ elif menu_selection in ["📋 كل المنتجات", "📋 All Products"]:
         st.dataframe(prod_df, use_container_width=True)
     else:
         st.info("لا توجد أصناف مسجلة حتى الآن.")
-        
