@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # إعدادات صفحة التطبيق (توسيع العرض لتغطية الشاشة بالكامل)
 st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="wide")
@@ -17,7 +17,7 @@ st.markdown("""
     }
     /* تكبير العناوين */
     h1 { font-size: 2.5rem !important; font-weight: bold; }
-    h2 { font-size: 2rem !important; }
+    h2 { font-size: 2.0rem !important; }
     h3 { font-size: 1.5rem !important; }
     /* تنسيق الحقول والجداول */
     .stTextInput input, .stSelectbox select, .stNumberInput input {
@@ -30,10 +30,12 @@ st.markdown("""
 def translate_role_to_arabic(role):
     mapping = {
         'admin': 'مدير النظام',
+        'General Manager': 'مدير المعرض',
         'Exhibition Manager': 'مسؤول المعرض',
         'Department Supervisor': 'مشرف قسم',
         'Department Employee': 'موظف قسم',
         'مدير النظام': 'مدير النظام',
+        'مدير المعرض': 'مدير المعرض',
         'مسؤول المعرض': 'مسؤول المعرض',
         'مشرف قسم': 'مشرف قسم',
         'موظف قسم': 'موظف قسم'
@@ -45,14 +47,24 @@ def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # جدول المستخدمين
+    # جدول المستخدمين مع إضافة الحقول الجديدة (اسم الموظف واسم الفرع)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password TEXT,
-            role TEXT
+            role TEXT,
+            emp_name TEXT DEFAULT '',
+            branch_name TEXT DEFAULT ''
         )
     ''')
+    
+    # التحقق من الأعمدة القديمة وتحديثها ديناميكياً بدون فقدان البيانات
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = [col[1] for col in cursor.fetchall()]
+    if 'emp_name' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN emp_name TEXT DEFAULT ''")
+    if 'branch_name' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN branch_name TEXT DEFAULT ''")
     
     # جدول المنتجات
     cursor.execute('''
@@ -65,32 +77,37 @@ def init_db():
         )
     ''')
     
-    # التحقق من الأعمدة ديناميكياً بدون حذف البيانات الحالية
     cursor.execute("PRAGMA table_info(products)")
-    columns = [col[1] for col in cursor.fetchall()]
-    if 'offer_price' not in columns:
+    prod_cols = [col[1] for col in cursor.fetchall()]
+    if 'offer_price' not in prod_cols:
         cursor.execute("ALTER TABLE products ADD COLUMN offer_price REAL DEFAULT 0.0")
-    if 'category' not in columns:
+    if 'category' not in prod_cols:
         cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'أخرى'")
 
-    # جدول سجلات الدخول
+    # جدول سجلات الدخول (مع وقت المشاهدة وحالتها)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT,
-            login_time TEXT
+            login_time TEXT,
+            viewed_at TEXT DEFAULT NULL
         )
     ''')
     
+    cursor.execute("PRAGMA table_info(login_logs)")
+    log_cols = [col[1] for col in cursor.fetchall()]
+    if 'viewed_at' not in log_cols:
+        cursor.execute("ALTER TABLE login_logs ADD COLUMN viewed_at TEXT DEFAULT NULL")
+
     # حساب المدير الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
-        cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin', '12345', 'Exhibition Manager')")
+        cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('admin', '12345', 'Exhibition Manager', 'المدير العام', 'الفرع الرئيسي')")
         
-    # حساب مسؤول المعرض
+    # حساب مسؤول المعرض الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT OR IGNORE INTO users VALUES ('Md', '0904', 'Exhibition Manager')")
+        cursor.execute("INSERT OR IGNORE INTO users (username, password, role, emp_name, branch_name) VALUES ('Md', '0904', 'Exhibition Manager', 'مسؤول المعرض', 'الفرع الرئيسي')")
         
     conn.commit()
     conn.close()
@@ -130,7 +147,7 @@ if not st.session_state.logged_in:
                     st.session_state.role = user_data[2]
                     
                     current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-                    cursor.execute("INSERT INTO login_logs (username, login_time) VALUES (?, ?)", (user_data[0], current_time))
+                    cursor.execute("INSERT INTO login_logs (username, login_time, viewed_at) VALUES (?, ?, NULL)", (user_data[0], current_time))
                     conn.commit()
                     conn.close()
                     
@@ -187,8 +204,8 @@ if st.sidebar.button(logout_label):
 
 st.sidebar.markdown("---")
 
-# تصفية القوائم بناءً على الدور الوظيفي الأصلي
-if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+# تصفية القوائم بناءً على الدور الوظيفي
+if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
 elif user_role in ['مشرف قسم', 'Department Supervisor']:
     if selected_lang == "العربية":
@@ -203,15 +220,19 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
             new_u = st.text_input("اسم المستخدم الجديد (يقبل حروف كبيرة أو صغيرة)")
+            new_emp = st.text_input("اسم الموظف (بالعربي أو الإنجليزي)")
+            new_branch = st.text_input("اسم الفرع")
             new_p = st.text_input("كلمة المرور للمستخدم الجديد", type="password")
+            
             new_role = st.selectbox(
                 "الصلاحية (الدور الوظيفي)", 
                 [
+                    "General Manager",
                     "Exhibition Manager", 
                     "Department Supervisor", 
                     "Department Employee"
@@ -226,25 +247,31 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                     try:
                         conn = get_connection()
                         cursor = conn.cursor()
-                        cursor.execute("INSERT INTO users VALUES (?, ?, ?)", (new_u.strip(), new_p, new_role))
+                        cursor.execute("INSERT INTO users (username, password, role, emp_name, branch_name) VALUES (?, ?, ?, ?, ?)", 
+                                       (new_u.strip(), new_p, new_role, new_emp.strip(), new_branch.strip()))
                         conn.commit()
                         conn.close()
                         st.success(f"تم إنشاء حساب المستخدم ({new_u}) بنجاح!")
                     except sqlite3.IntegrityError:
                         st.error("اسم المستخدم موجود مسبقاً، اختر اسماً آخر.")
                 else:
-                    st.error("الرجاء أدخال اسم المستخدم وكلمة المرور.")
+                    st.error("الرجاء إدخال اسم المستخدم وكلمة المرور على الأقل.")
                     
         st.markdown("---")
-        st.write("### المستخدمون المسجلون في النظام:")
+        st.write("### المستخدمون المسجلون في النظام (مع عرض كلمات المرور للمسؤولين):")
         
         conn = get_connection()
-        users_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', role AS 'الصلاحية (الدور)' FROM users", conn)
+        users_df = pd.read_sql_query("""
+            SELECT username AS 'اسم المستخدم', 
+                   emp_name AS 'اسم الموظف', 
+                   branch_name AS 'اسم الفرع', 
+                   password AS 'كلمة المرور', 
+                   role AS 'الصلاحية (الدور)' 
+            FROM users
+        """, conn)
         conn.close()
         
-        # ترجمة الصلاحيات في الجدول المعروض إلى العربية
         users_df['الصلاحية (الدور)'] = users_df['الصلاحية (الدور)'].apply(translate_role_to_arabic)
-        
         st.dataframe(users_df, use_container_width=True)
         
         st.markdown("#### 🗑️ حذف مستخدم مسجل:")
@@ -270,60 +297,46 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
 
 # --- 2. سجلات دخول المستخدمين ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+    # التحقق الصارم من الصلاحيات للمشاهدة الإجبارية
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول المعرض', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
         
         conn = get_connection()
-        logs_df = pd.read_sql_query("SELECT id AS 'م', username AS 'اسم المستخدم', login_time AS 'وقت تسجيل الدخول' FROM login_logs ORDER BY id DESC", conn)
+        cursor = conn.cursor()
+        
+        # 1. تحديث وقت المشاهدة (viewed_at) للسجلات التي لم يتم مشاهدتها من قبل
+        now_str = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+        cursor.execute("UPDATE login_logs SET viewed_at = ? WHERE viewed_at IS NULL", (now_str,))
+        conn.commit()
+        
+        # 2. فحص وحذف السجلات التي مر على مشاهدتها أكثر من 5 دقائق تلقائياً
+        five_mins_ago = datetime.now() - timedelta(minutes=5)
+        cursor.execute("SELECT id, viewed_at FROM login_logs WHERE viewed_at IS NOT NULL")
+        all_logs = cursor.fetchall()
+        
+        for log_id, v_time_str in all_logs:
+            try:
+                # محاولة مطابقة التنسيق الزمني
+                v_time = datetime.strptime(v_time_str, "%Y-%m-%d %I:%M:%S %p")
+                if datetime.now() > v_time + timedelta(minutes=5):
+                    cursor.execute("DELETE FROM login_logs WHERE id = ?", (log_id,))
+            except Exception:
+                pass
+        conn.commit()
+        
+        # جلب البيانات الحالية (فقط اسم المستخدم ووقت تسجيل الدخول بدون عمود م)
+        logs_df = pd.read_sql_query("SELECT username AS 'اسم المستخدم', login_time AS 'وقت تسجيل الدخول' FROM login_logs ORDER BY id DESC", conn)
         conn.close()
+        
+        st.info("ℹ️ ملاحظة: يتم حذف السجلات تلقائياً بعد مرور 5 دقائق من وقت مشاهدتها.")
         
         if not logs_df.empty:
             st.dataframe(logs_df, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("#### 🗑️ إدارة سجلات الدخول (بعد المشاهدة)")
-            
-            col_del1, col_del2 = st.columns(2)
-            
-            with col_del1:
-                if st.button("حذف سجل محدد"):
-                    st.session_state.show_delete_single = True
-                
-                if st.session_state.get("show_delete_single", False):
-                    with st.form("single_log_delete_form"):
-                        log_id_to_delete = st.selectbox("اختر رقم السجل (م) المراد حذفه", logs_df['م'].tolist())
-                        confirm_single = st.form_submit_button("تأكيد حذف السجل")
-                        if confirm_single:
-                            conn = get_connection()
-                            cursor = conn.cursor()
-                            cursor.execute("DELETE FROM login_logs WHERE id = ?", (log_id_to_delete,))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"تم حذف السجل رقم ({log_id_to_delete}) بنجاح!")
-                            st.session_state.show_delete_single = False
-                            st.rerun()
-
-            with col_del2:
-                if st.button("حذف كافة السجلات بالكامل"):
-                    st.session_state.show_clear_all = True
-                
-                if st.session_state.get("show_clear_all", False):
-                    with st.form("clear_all_logs_form"):
-                        st.warning("⚠ هل أنت متأكد من رغبتك في مسح جميع سجلات الدخول بالكامل؟")
-                        confirm_all = st.form_submit_button("نعم، احذف الكل")
-                        if confirm_all:
-                            conn = get_connection()
-                            cursor = conn.cursor()
-                            cursor.execute("DELETE FROM login_logs")
-                            conn.commit()
-                            conn.close()
-                            st.success("تم مسح جميع سجلات الدخول بنجاح!")
-                            st.session_state.show_clear_all = False
-                            st.rerun()
+            st.success("✔ تمت مشاهدة السجلات بنجاح وسيتم جدولتها للحذف التلقائي بعد 5 دقائق.")
         else:
-            st.info("لا توجد سجلات دخول مسجلة حتى الآن.")
+            st.info("لا توجد سجلات دخول جديدة أو تم حذف السجلات التي تمت مشاهدتها.")
     else:
-        st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
+        st.error("⚠ عذراً، مشاهدة سجلات الدخول إجبارية ومصرح بها حصرياً لـ (مدير النظام، مدير المعرض، ومسؤول المعرض).")
 
 # --- 3. فحص السعر ---
 elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
@@ -365,7 +378,7 @@ elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
 
 # --- 4. إدارة المنتجات والأسعار ---
 elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -396,7 +409,7 @@ elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مدير المعرض', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'General Manager', 'Exhibition Manager', 'Department Supervisor']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
