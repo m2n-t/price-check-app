@@ -40,7 +40,7 @@ def init_db():
         )
     ''')
     
-    # جدول المنتجات (تم إضافة عمود `offer_price` لسعر العرض)
+    # جدول المنتجات (يتضمن عمود `offer_price` لسعر العرض)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             barcode TEXT PRIMARY KEY,
@@ -65,10 +65,10 @@ def init_db():
     if not cursor.fetchone():
         cursor.execute("INSERT INTO users VALUES ('admin', '12345', 'admin')")
         
-    # إنشاء حساب مسؤول المعرض (Exhibition Manager / 0904)
-    cursor.execute("SELECT * FROM users WHERE username = 'Exhibition Manager'")
+    # إنشاء حساب مسؤول المعرض الجديد (Md / 0904)
+    cursor.execute("SELECT * FROM users WHERE username = 'Md'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO users VALUES ('Exhibition Manager', '0904', 'Exhibition Manager')")
+        cursor.execute("INSERT INTO users VALUES ('Md', '0904', 'Exhibition Manager')")
         
     conn.commit()
     conn.close()
@@ -217,7 +217,7 @@ if menu_selection == "👥 إدارة المستخدمين":
             delete_btn = st.form_submit_button("حذف المستخدم المحدد")
             
             if delete_btn:
-                if user_to_delete in ["admin", "Exhibition Manager"]:
+                if user_to_delete in ["admin", "Md"]:
                     st.error("⚠ لا يمكن حذف حسابات الإدارة الأساسية.")
                 elif user_to_delete == st.session_state.username:
                     st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
