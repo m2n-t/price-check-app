@@ -471,3 +471,4 @@ elif menu_selection in ["📋 كل المنتجات", "📋 All Products"]:
         st.dataframe(prod_df, use_container_width=True)
     else:
         st.info("لا توجد أصناف مسجلة حتى الآن.")
+        
