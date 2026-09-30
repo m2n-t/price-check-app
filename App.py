@@ -279,6 +279,47 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         
         if not logs_df.empty:
             st.dataframe(logs_df, use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("#### 🗑️ إدارة سجلات الدخول (بعد المشاهدة)")
+            
+            col_del1, col_del2 = st.columns(2)
+            
+            with col_del1:
+                if st.button("حذف سجل محدد"):
+                    st.session_state.show_delete_single = True
+                
+                if st.session_state.get("show_delete_single", False):
+                    with st.form("single_log_delete_form"):
+                        log_id_to_delete = st.selectbox("اختر رقم السجل (م) المراد حذفه", logs_df['م'].tolist())
+                        confirm_single = st.form_submit_button("تأكيد حذف السجل")
+                        if confirm_single:
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM login_logs WHERE id = ?", (log_id_to_delete,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"تم حذف السجل رقم ({log_id_to_delete}) بنجاح!")
+                            st.session_state.show_delete_single = False
+                            st.rerun()
+
+            with col_del2:
+                if st.button("حذف كافة السجلات بالكامل"):
+                    st.session_state.show_clear_all = True
+                
+                if st.session_state.get("show_clear_all", False):
+                    with st.form("clear_all_logs_form"):
+                        st.warning("⚠ هل أنت متأكد من رغبتك في مسح جميع سجلات الدخول بالكامل؟")
+                        confirm_all = st.form_submit_button("نعم، احذف الكل")
+                        if confirm_all:
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM login_logs")
+                            conn.commit()
+                            conn.close()
+                            st.success("تم مسح جميع سجلات الدخول بنجاح!")
+                            st.session_state.show_clear_all = False
+                            st.rerun()
         else:
             st.info("لا توجد سجلات دخول مسجلة حتى الآن.")
     else:
