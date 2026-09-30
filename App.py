@@ -20,7 +20,6 @@ st.markdown("""
     .stTextInput input, .stSelectbox select, .stNumberInput input {
         font-size: 18px !important;
     }
-    /* ضمان محاذاة الجداول لليمين */
     table {
         direction: rtl;
         text-align: right;
@@ -257,8 +256,8 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             table_data = []
             for index, (u_name, pwd, role_val, b_name, e_name) in enumerate(all_users, start=1):
                 table_data.append({
-                    "العدد": index,
                     "حذف": "⊖",
+                    "العدد": index,
                     "اسم المستخدم": u_name,
                     "كلمة المرور": pwd,
                     "الصلاحية": translate_role_to_arabic(role_val),
@@ -267,10 +266,10 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             
             df_users = pd.DataFrame(table_data)
             
-            # جدول قابل للتعديل الفوري التلقائي (العدد وحذف غير قابلين للتعديل)
+            # جدول قابل للتعديل الفوري التلقائي (حذف والعدد واسم المستخدم غير قابلين للتعديل)
             edited_df = st.data_editor(
                 df_users,
-                disabled=["العدد", "حذف", "اسم المستخدم"],
+                disabled=["حذف", "العدد", "اسم المستخدم"],
                 use_container_width=True,
                 key="unified_users_grid"
             )
@@ -287,7 +286,6 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                 b_n = row['اسم الفرع']
                 del_action = row['حذف']
                 
-                # إذا قام المستخدم بالضغط على زر الحذف أو تغيير رمز الحذف
                 if del_action != "⊖":
                     if u_n.lower() in ["admin", "md"]:
                         st.error(f"⚠ لا يمكن حذف حساب الإدارة الأساسي ({u_n}).")
