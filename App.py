@@ -6,22 +6,24 @@ from datetime import datetime
 # إعدادات صفحة التطبيق (توسيع العرض لتغطية الشاشة بالكامل)
 st.set_page_config(page_title="تشيك الأسعار - PriceCheck Pro", page_icon="🏷", layout="wide")
 
-# --- تنسيق CSS لتكبير الخطوط وجعل الواجهة من اليمين لليسار (RTL) ---
+# --- تنسيق CSS لتكبير الخطوط، جعل الواجهة من اليمين لليسار (RTL)، وتنسيق الجداول ---
 st.markdown("""
     <style>
-    /* تكبير الخطوط العامة وتوجيه النص لليمين */
     html, body, [class*="css"] {
         direction: rtl;
         text-align: right;
         font-size: 18px !important;
     }
-    /* تكبير العناوين */
     h1 { font-size: 2.5rem !important; font-weight: bold; }
     h2 { font-size: 2.0rem !important; }
     h3 { font-size: 1.5rem !important; }
-    /* تنسيق الحقول والجداول */
     .stTextInput input, .stSelectbox select, .stNumberInput input {
         font-size: 18px !important;
+    }
+    /* ضمان محاذاة الجداول لليمين */
+    table {
+        direction: rtl;
+        text-align: right;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -204,13 +206,12 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    # السماح فقط لمدير النظام، مدير الفرع، ومسؤول الفرع
     if user_role in ['مدير النظام', 'مدير الفرع', 'مسؤول الفرع', 'admin', 'General Manager', 'Exhibition Manager']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
             new_u = st.text_input("اسم المستخدم الجديد")
-            new_emp = st.text_input("اسم الموظف / اسم الفرع الفرعي (اختياري)")
+            new_emp = st.text_input("اسم الموظف / الفرع الفرعي (اختياري)")
             new_branch = st.text_input("اسم الفرع الرئيسي")
             new_p = st.text_input("كلمة المرور", type="password")
             
@@ -244,8 +245,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
                     st.error("الرجاء إدخال اسم المستخدم وكلمة المرور على الأقل.")
                     
         st.markdown("---")
-        st.subheader("📋 قائمة المستخدمين المسجلين في النظام")
-        st.info("💡 اضغط مباشرة على أي خلية في الجدول أدناه لتعديلها (اسم المستخدم، كلمة المرور، الصلاحية، أو اسم الفرع)، ثم اضغط زر الحفظ. ولحذف أي مستخدم اضغط على زر الدائرة (⊙) بجانب رقمه:")
+        st.subheader("📋 المستخدمون المسجلون في النظام")
         
         conn = get_connection()
         cursor = conn.cursor()
@@ -254,11 +254,11 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         conn.close()
         
         if all_users:
-            # تجهيز بيانات الجدول الموحد بالترتيب المطلوب
             table_data = []
             for index, (u_name, pwd, role_val, b_name, e_name) in enumerate(all_users, start=1):
                 table_data.append({
-                    "الترتيب": index,
+                    "العدد": index,
+                    "حذف": "⊖",
                     "اسم المستخدم": u_name,
                     "كلمة المرور": pwd,
                     "الصلاحية": translate_role_to_arabic(role_val),
@@ -267,70 +267,62 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             
             df_users = pd.DataFrame(table_data)
             
-            # عرض جدول واحد متكامل وقابل للتعديل المباشر
+            # جدول قابل للتعديل الفوري التلقائي (العدد وحذف غير قابلين للتعديل)
             edited_df = st.data_editor(
                 df_users,
-                disabled=["الترتيب"],
+                disabled=["العدد", "حذف", "اسم المستخدم"],
                 use_container_width=True,
                 key="unified_users_grid"
             )
             
-            col_save, col_spacer = st.columns([2, 5])
-            with col_save:
-                if st.button("💾 حفظ كافة التعديلات في الجدول"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    for _, row in edited_df.iterrows():
-                        u_n = row['اسم المستخدم']
-                        p_w = row['كلمة المرور']
-                        r_v = row['الصلاحية']
-                        b_n = row['اسم الفرع']
-                        
-                        # إرجاع اسم الصلاحية للغة الإنجليزية للتخزين الصحيح إن لزم
-                        reverse_mapping = {
-                            'مدير النظام': 'General Manager',
-                            'مدير الفرع': 'General Manager',
-                            'مسؤول الفرع': 'Exhibition Manager',
-                            'مشرف قسم': 'Department Supervisor',
-                            'موظف قسم': 'Department Employee'
-                        }
-                        db_role = reverse_mapping.get(r_v, r_v)
-                        
-                        cursor.execute("""
-                            UPDATE users 
-                            SET password = ?, role = ?, branch_name = ? 
-                            WHERE username = ?
-                        """, (p_w, db_role, b_n, u_n))
+            # حفظ التعديلات فورياً وتتبع عمليات الحذف عبر زر الدائرة (⊖)
+            conn = get_connection()
+            cursor = conn.cursor()
+            needs_rerun = False
+            
+            for _, row in edited_df.iterrows():
+                u_n = row['اسم المستخدم']
+                p_w = row['كلمة المرور']
+                r_v = row['الصلاحية']
+                b_n = row['اسم الفرع']
+                del_action = row['حذف']
+                
+                # إذا قام المستخدم بالضغط على زر الحذف أو تغيير رمز الحذف
+                if del_action != "⊖":
+                    if u_n.lower() in ["admin", "md"]:
+                        st.error(f"⚠ لا يمكن حذف حساب الإدارة الأساسي ({u_n}).")
+                    elif u_n.lower() == st.session_state.username.lower():
+                        st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
+                    else:
+                        cursor.execute("DELETE FROM users WHERE username = ?", (u_n,))
+                        conn.commit()
+                        needs_rerun = True
+                else:
+                    reverse_mapping = {
+                        'مدير النظام': 'General Manager',
+                        'مدير الفرع': 'General Manager',
+                        'مسؤول الفرع': 'Exhibition Manager',
+                        'مشرف قسم': 'Department Supervisor',
+                        'موظف قسم': 'Department Employee'
+                    }
+                    db_role = reverse_mapping.get(r_v, r_v)
+                    cursor.execute("""
+                        UPDATE users 
+                        SET password = ?, role = ?, branch_name = ? 
+                        WHERE username = ?
+                    """, (p_w, db_role, b_n, u_n))
                     conn.commit()
-                    conn.close()
-                    st.success("تم تحديث وحفظ بيانات المستخدمين بنجاح!")
-                    st.rerun()
+            
+            conn.close()
+            if needs_rerun:
+                st.success("تم الحذف بنجاح!")
+                st.rerun()
 
-            st.markdown("---")
-            st.write("#### 🗑️ لوحة حذف المستخدمين:")
-            # أزرار الحذف الدائرية المرتبة بجانب أرقام المستخدمين
-            for index, (u_name, pwd, role_val, b_name, e_name) in enumerate(all_users, start=1):
-                c_btn, c_info = st.columns([1, 10])
-                with c_btn:
-                    if st.button(f"⊙ {index}", key=f"del_user_{u_name}", help=f"حذف المستخدم {u_name}"):
-                        if u_name.lower() in ["admin", "md"]:
-                            st.error(f"⚠ لا يمكن حذف حساب الإدارة الأساسي ({u_name}).")
-                        elif u_name.lower() == st.session_state.username.lower():
-                            st.error("⚠ لا يمكنك حذف الحساب الذي تستخدمه حالياً.")
-                        else:
-                            conn = get_connection()
-                            conn.cursor().execute("DELETE FROM users WHERE username = ?", (u_name,))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"تم حذف المستخدم ({u_name}) بنجاح!")
-                            st.rerun()
-                with c_info:
-                    st.markdown(f"المستخدم: **{u_name}** | الفرع: **{b_name if b_name else e_name}** | الصلاحية: **{translate_role_to_arabic(role_val)}**")
         else:
             st.info("لا يوجد مستخدمون مسجلون حالياً.")
 
     else:
-        st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة. مخصصة لمدير النظام، مدير الفرع، ومسؤول الفرع فقط.")
+        st.error("⚠ عذراً، لا تملك صلاحية الوصول إلى هذه الصفحة.")
 
 # --- 2. سجلات دخول المستخدمين ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
@@ -347,7 +339,7 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
             for index, (log_id, u_name, l_time) in enumerate(logs, start=1):
                 col_num, col_row1, col_row2 = st.columns([1, 4, 4])
                 with col_num:
-                    if st.button(f"⊙ {index}", key=f"del_log_{log_id}", help="حذف السجل"):
+                    if st.button(f"⊖ {index}", key=f"del_log_{log_id}"):
                         conn = get_connection()
                         conn.cursor().execute("DELETE FROM login_logs WHERE id = ?", (log_id,))
                         conn.commit()
@@ -355,9 +347,9 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
                         st.success("تم حذف السجل بنجاح!")
                         st.rerun()
                 with col_row1:
-                    st.markdown(f"المستخدم: **{u_name}**")
+                    st.markdown(f"**{u_name}**")
                 with col_row2:
-                    st.markdown(f"وقت الدخول: **{l_time}**")
+                    st.markdown(f"**{l_time}**")
                 st.markdown("---")
         else:
             st.info("لا توجد سجلات دخول مسجلة حالياً.")
