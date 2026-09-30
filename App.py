@@ -26,12 +26,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. إعداد قاعدة البيانات المحلية (SQLite) مع الحفاظ التام على البيانات عند أي تعديل للكود ---
+# --- 1. إعداد قاعدة البيانات المحلية (SQLite) مع الحفاظ التام على البيانات ---
 def init_db():
     conn = sqlite3.connect('price_check.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # إنشاء جدول المستخدمين (لا يحذف البيانات القديمة أبداً بسبب IF NOT EXISTS)
+    # جدول المستخدمين
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -40,7 +40,7 @@ def init_db():
         )
     ''')
     
-    # إنشاء جدول المنتجات
+    # جدول المنتجات
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             barcode TEXT PRIMARY KEY,
@@ -51,7 +51,7 @@ def init_db():
         )
     ''')
     
-    # التحقق من وجود الأعمدة ديناميكياً بدون حذف البيانات الحالية
+    # التحقق من الأعمدة ديناميكياً بدون حذف البيانات الحالية
     cursor.execute("PRAGMA table_info(products)")
     columns = [col[1] for col in cursor.fetchall()]
     if 'offer_price' not in columns:
@@ -59,7 +59,7 @@ def init_db():
     if 'category' not in columns:
         cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'أخرى'")
 
-    # إنشاء جدول سجلات الدخول
+    # جدول سجلات الدخول
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,12 +68,12 @@ def init_db():
         )
     ''')
     
-    # إضافة حساب المدير الأساسي إذا لم يكن موجوداً فقط
+    # حساب المدير الأساسي
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'admin'")
     if not cursor.fetchone():
         cursor.execute("INSERT OR IGNORE INTO users VALUES ('admin', '12345', 'مدير النظام')")
         
-    # إضافة حساب مسؤول المعرض إذا لم يكن موجوداً فقط
+    # حساب مسؤول المعرض
     cursor.execute("SELECT * FROM users WHERE LOWER(username) = 'md'")
     if not cursor.fetchone():
         cursor.execute("INSERT OR IGNORE INTO users VALUES ('Md', '0904', 'مسؤول المعرض')")
@@ -127,9 +127,9 @@ if not st.session_state.logged_in:
                     st.error("خطأ في اسم المستخدم أو كلمة المرور.")
     st.stop()
 
-# --- 3. خيار اختيار لغة الواجهة في الشريط الجانبي ---
-st.sidebar.markdown("### 🌐 إعدادات اللغة / Language")
-selected_lang = st.sidebar.selectbox("اختر لغة الواجهة / Select Language", ["العربية", "English"])
+# --- 3. خيار اختيار لغة الواجهة للمستخدم الحالي في الشريط الجانبي ---
+st.sidebar.markdown("### 🌐 إعدادات لغة الواجهة")
+selected_lang = st.sidebar.selectbox("اختر لغة الواجهة", ["العربية", "English"])
 
 # --- واجهة التطبيق الرئيسية بعد الدخول ---
 if selected_lang == "العربية":
@@ -173,10 +173,10 @@ st.sidebar.markdown("---")
 
 user_role = st.session_state.role
 
-# تصفية القوائم بناءً على الدور الوظيفي
-if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+# تصفية القوائم بناءً على الصلاحيات العربية للمستخدم
+if user_role in ['مدير النظام', 'مسؤول المعرض']:
     menu_selection = st.sidebar.radio(menu_title, menu_options)
-elif user_role in ['مشرف قسم', 'Department Supervisor']:
+elif user_role == 'مشرف قسم':
     if selected_lang == "العربية":
         menu_selection = st.sidebar.radio(menu_title, ["🔍 فحص السعر", "➕ إدارة المنتجات والأسعار", "📁 اسعار المنتجات (رفع إكسل)", "📋 كل المنتجات"])
     else:
@@ -189,7 +189,7 @@ else:
 
 # --- 1. إدارة المستخدمين ---
 if menu_selection in ["👥 إدارة المستخدمين", "👥 User Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض']:
         st.subheader("إدارة المستخدمين وصلاحيات النظام")
         
         with st.form("user_form"):
@@ -253,7 +253,7 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
 
 # --- 2. سجلات دخول المستخدمين ---
 elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 Login Logs"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'admin', 'Exhibition Manager']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض']:
         st.subheader("📊 سجلات دخول المشرفين والمستخدمين إلى النظام")
         
         conn = get_connection()
@@ -307,7 +307,7 @@ elif menu_selection in ["🔍 فحص السعر", "🔍 Price Checker"]:
 
 # --- 4. إدارة المنتجات والأسعار ---
 elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕ Product Management"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم']:
         st.subheader("إضافة أو تعديل منتج فردي (مع خيار العروض)")
         with st.form("product_form"):
             p_code = st.text_input("رقم الباركود")
@@ -338,7 +338,7 @@ elif menu_selection in ["➕ إدارة المنتجات والأسعار", "➕
 
 # --- 5. اسعار المنتجات (رفع إكسل) ---
 elif menu_selection in ["📁 اسعار المنتجات (رفع إكسل)", "📁 Import Prices (Excel)"]:
-    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم', 'admin', 'Exhibition Manager', 'Department Supervisor']:
+    if user_role in ['مدير النظام', 'مسؤول المعرض', 'مشرف قسم']:
         st.subheader("استيراد اسعار المنتجات عبر ملف (CSV / Excel)")
         st.markdown("""
         **تعليمات الملف:**
