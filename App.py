@@ -266,12 +266,13 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             
             df_users = pd.DataFrame(table_data)
             
-            # ترتيب الأعمدة تماماً كما طلبت: حذف | العدد | اسم المستخدم | كلمة المرور | الصلاحية | اسم الفرع
+            # ترتيب الأعمدة الدقيق وإلغاء فهرسة الـ pandas لمنع ظهور عمود الفهرس الافتراضي
             df_users = df_users[["حذف", "العدد", "اسم المستخدم", "كلمة المرور", "الصلاحية", "اسم الفرع"]]
             
             edited_df = st.data_editor(
                 df_users,
                 disabled=["حذف", "العدد", "اسم المستخدم"],
+                hide_index=True,
                 use_container_width=True,
                 key="unified_users_grid"
             )
