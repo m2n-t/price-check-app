@@ -26,7 +26,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- دالة مساعدة لترجمة الصلاحيات إلى العربية للجميع ---
+# --- دالة مساعدة لترجمة الصلاحيات إلى العربية ---
 def translate_role_to_arabic(role):
     mapping = {
         'admin': 'مدير النظام',
@@ -259,8 +259,8 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
         users_df['الصلاحية'] = users_df['الصلاحية'].apply(translate_role_to_arabic)
         st.dataframe(users_df, use_container_width=True)
         
-        # قسم التعديل المرن (اضغط على الحقل المطلوب تعديله فقط)
-        st.markdown("#### ✏️ تعديل بيانات موظف / فرع مستجل:")
+        # قسم التعديل المرن (اختر اسم المستخدم وعدل الحقل المطلوب)
+        st.markdown("#### ✏️ تعديل بيانات موظف / فرع مسجل:")
         with st.form("edit_user_data_form"):
             edit_username = st.selectbox("اختر اسم المستخدم للتعديل", users_df['اسم المستخدم'].tolist())
             
@@ -268,8 +268,8 @@ if menu_selection in ["👥 إدارة المستخدمين", "👥 User Managem
             cur_data = conn.cursor().execute("SELECT emp_name, branch_name FROM users WHERE username = ?", (edit_username,)).fetchone()
             conn.close()
             
-            up_emp = st.text_input("تعديل اسم الموظف (اتركه كما هو أو غير ما تحتاجه)", value=cur_data[0] if cur_data else "")
-            up_branch = st.text_input("تعديل اسم الفرع (اتركه كما هو أو غير ما تحتاجه)", value=cur_data[1] if cur_data else "")
+            up_emp = st.text_input("تعديل اسم الموظف", value=cur_data[0] if cur_data else "")
+            up_branch = st.text_input("تعديل اسم الفرع", value=cur_data[1] if cur_data else "")
             
             update_data_btn = st.form_submit_button("حفظ التعديلات المحددة")
             if update_data_btn:
@@ -314,7 +314,7 @@ elif menu_selection in ["📊 سجلات دخول المستخدمين", "📊 L
         conn.close()
         
         if logs:
-            st.info("💡 اضغط على زر الناقص (-) بجانب الرقم لحذف السجل فوراً:")
+            st.info("💡 اضغط على زر الحذف بجانب كل سجل لإزالته فوراً:")
             
             for index, (log_id, u_name, l_time) in enumerate(logs):
                 col_num, col_row1, col_row2, col_row3 = st.columns([1, 3, 3, 1])
@@ -471,4 +471,3 @@ elif menu_selection in ["📋 كل المنتجات", "📋 All Products"]:
         st.dataframe(prod_df, use_container_width=True)
     else:
         st.info("لا توجد أصناف مسجلة حتى الآن.")
-        
